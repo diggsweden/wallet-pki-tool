@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+environment: local
+outputDir: ./target/test-certificates
+
+authorities:
+  - id: verifier-access-ca
+    commonName: "DIGG Wallet Verifier Access CA"
+  - id: pid-issuer-ca
+    commonName: "DIGG Wallet PID Issuer CA"
+  - id: wallet-provider-ca
+    commonName: "DIGG Wallet Provider CA"
+  - id: trust-source-ca
+    commonName: "DIGG Wallet Trust Source CA"
+
+certificates:
+  - id: verifier-access-certificate
+    type: relying-party-access
+    ca: verifier-access-ca
+    keystore: ./verifier-access-certificate/verifier-access-certificate.p12
+    passwordEnv: TEST_VERIFIER_KEYSTORE_PASSWORD
+    sans:
+      - "localhost"
+      - "verifier-backend"
+    tradeName: "DIGG Verifier"
+    country: "SE"
+
+  - id: pid-issuer
+    type: pid-issuer-service
+    ca: pid-issuer-ca
+    keystore: ./issuer/pid_issuer.p12
+    passwordEnv: TEST_PID_ISSUER_KEYSTORE_PASSWORD
+    sans:
+      - "localhost"
+      - "pid-issuer"
+
+  - id: wallet-provider
+    type: wallet-provider-service
+    ca: wallet-provider-ca
+    keystore: ./wallet-provider/wallet_provider.p12
+    passwordEnv: TEST_PROVIDER_KEYSTORE_PASSWORD
+    sans:
+      - "localhost"
+      - "wallet-provider"
+
+trustLists:
+  - id: lote
+    type: etsi-119-602-lote
+    signerAuthority: trust-source-ca
+    outputFile: ./trust-source/signed/trusted-entities.json

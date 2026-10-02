@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+**/*.md
+**/*.yml
+**/*.yaml
+.rumdl-cache
+megalinter-reports
+target
+development/format/eclipse-java-google-style.xml
+development/lint/google_checks.xml
+development/sast/pmd_default_java.xml
