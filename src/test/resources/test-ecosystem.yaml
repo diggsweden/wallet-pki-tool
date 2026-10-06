@@ -26,6 +26,7 @@ certificates:
       - "verifier-backend"
     tradeName: "DIGG Verifier"
     country: "SE"
+    organizationIdentifier: "VATSE-12345678"
 
   - id: pid-issuer
     type: pid-issuer-service

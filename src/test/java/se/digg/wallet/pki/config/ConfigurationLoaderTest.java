@@ -25,25 +25,28 @@ class ConfigurationLoaderTest {
 
   @Test
   void shouldLoadValidConfiguration() {
+    // 1. Load test configuration file
     Path configPath = Path.of("src/test/resources/test-ecosystem.yaml");
     PkiConfiguration config = loader.load(configPath);
 
+    // 2. Verify parsed metadata, authorities, certificates, and trust lists
     assertThat(config).isNotNull();
-    assertThat(config.getEnvironment()).isEqualTo("local");
-    assertThat(config.getOutputDir()).isEqualTo("./target/test-certificates");
-    assertThat(config.getAuthorities()).hasSize(4);
-    assertThat(config.getCertificates()).hasSize(3);
-    assertThat(config.getTrustLists()).hasSize(1);
+    assertThat(config.environment()).isEqualTo("local");
+    assertThat(config.outputDir()).isEqualTo("./target/test-certificates");
+    assertThat(config.authorities()).hasSize(4);
+    assertThat(config.certificates()).hasSize(3);
+    assertThat(config.trustLists()).hasSize(1);
 
-    CertificateConfig verifierCert = config.getCertificates().get(0);
-    assertThat(verifierCert.getId()).isEqualTo("verifier-access-certificate");
-    assertThat(verifierCert.getType()).isEqualTo("relying-party-access");
-    assertThat(verifierCert.getCa()).isEqualTo("verifier-access-ca");
-    assertThat(verifierCert.getSans()).containsExactly("localhost", "verifier-backend");
+    CertificateConfig verifierCert = config.certificates().get(0);
+    assertThat(verifierCert.id()).isEqualTo("verifier-access-certificate");
+    assertThat(verifierCert.type()).isEqualTo("relying-party-access");
+    assertThat(verifierCert.ca()).isEqualTo("verifier-access-ca");
+    assertThat(verifierCert.sans()).containsExactly("localhost", "verifier-backend");
   }
 
   @Test
   void shouldThrowWhenFileNotFound() {
+    // Verify exception when configuration file does not exist
     Path nonExistent = Path.of("non-existent-config.yaml");
 
     assertThatThrownBy(() -> loader.load(nonExistent))
@@ -53,6 +56,7 @@ class ConfigurationLoaderTest {
 
   @Test
   void shouldThrowWhenPathIsDirectory(@TempDir Path tempDir) {
+    // Verify exception when configuration path points to a directory
     assertThatThrownBy(() -> loader.load(tempDir))
         .isInstanceOf(PkiConfigurationException.class)
         .hasMessageContaining("is a directory, not a file");
@@ -60,6 +64,7 @@ class ConfigurationLoaderTest {
 
   @Test
   void shouldThrowWhenOutputDirIsMissing(@TempDir Path tempDir) throws IOException {
+    // Verify validation error when required outputDir field is omitted
     Path invalidYaml = tempDir.resolve("no-output.yaml");
     Files.writeString(
         invalidYaml,
@@ -77,6 +82,7 @@ class ConfigurationLoaderTest {
 
   @Test
   void shouldThrowWhenDuplicateAuthorityId(@TempDir Path tempDir) throws IOException {
+    // Verify validation error on duplicate authority IDs
     Path invalidYaml = tempDir.resolve("duplicate-ca.yaml");
     Files.writeString(
         invalidYaml,
@@ -97,6 +103,7 @@ class ConfigurationLoaderTest {
   @Test
   void shouldThrowWhenCertificateReferencesUnknownAuthority(@TempDir Path tempDir)
       throws IOException {
+    // Verify validation error when certificate references an undefined CA
     Path invalidYaml = tempDir.resolve("unknown-ca.yaml");
     Files.writeString(
         invalidYaml,
@@ -119,6 +126,7 @@ class ConfigurationLoaderTest {
 
   @Test
   void shouldThrowWhenCertificateHasNoPasswordConfig(@TempDir Path tempDir) throws IOException {
+    // Verify validation error when certificate lacks password configuration
     Path invalidYaml = tempDir.resolve("no-password.yaml");
     Files.writeString(
         invalidYaml,

@@ -19,6 +19,11 @@ import se.digg.wallet.pki.config.CertificateConfig;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
+import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
+import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
+import se.digg.wallet.pki.crypto.EcKeyGenerator;
+import se.digg.wallet.pki.crypto.KeystoreManager;
+import se.digg.wallet.pki.generator.PkiEngine;
 
 /** Subcommand for generating PKI certificates, keystores, and trust lists. */
 @Command(
@@ -46,6 +51,7 @@ public class GenerateCommand implements Callable<Integer> {
 
   private final ConfigurationLoader configLoader;
   private final SecretResolver secretResolver;
+  private final PkiEngine pkiEngine;
 
   /** Default constructor. */
   public GenerateCommand() {
@@ -59,8 +65,29 @@ public class GenerateCommand implements Callable<Integer> {
    * @param secretResolver the secret resolver
    */
   public GenerateCommand(ConfigurationLoader configLoader, SecretResolver secretResolver) {
+    this(
+        configLoader,
+        secretResolver,
+        new PkiEngine(
+            new EcKeyGenerator(),
+            new CertificateAuthorityManager(),
+            new CertificateProfileIssuer(),
+            new KeystoreManager(),
+            secretResolver));
+  }
+
+  /**
+   * Full constructor with explicit dependencies.
+   *
+   * @param configLoader the configuration loader
+   * @param secretResolver the secret resolver
+   * @param pkiEngine the PKI generator engine
+   */
+  public GenerateCommand(
+      ConfigurationLoader configLoader, SecretResolver secretResolver, PkiEngine pkiEngine) {
     this.configLoader = configLoader;
     this.secretResolver = secretResolver;
+    this.pkiEngine = pkiEngine;
   }
 
   @Override
@@ -75,53 +102,40 @@ public class GenerateCommand implements Callable<Integer> {
             : new PrintWriter(System.err, true, StandardCharsets.UTF_8);
 
     try {
-      out.printf("Loading configuration from: %s%n", configFile.getPath());
+      // 1. Load and parse YAML configuration
+      out.println("Loading configuration from: %s".formatted(configFile.getPath()));
       PkiConfiguration config = configLoader.load(configFile.toPath());
 
-      out.printf(
-          "Environment: %s%n",
-          config.getEnvironment() != null ? config.getEnvironment() : "default");
-      out.printf("Output Directory: %s%n", config.getOutputDir());
-      out.printf("Authorities: %d configured%n", config.getAuthorities().size());
-      out.printf("Certificates: %d configured%n", config.getCertificates().size());
-      out.printf("Trust lists: %d configured%n", config.getTrustLists().size());
+      out.println(
+          "Environment: %s"
+              .formatted(config.environment() != null ? config.environment() : "default"));
+      out.println("Output Directory: %s".formatted(config.outputDir()));
+      out.println("Authorities: %d configured".formatted(config.authorities().size()));
+      out.println("Certificates: %d configured".formatted(config.certificates().size()));
+      out.println("Trust lists: %d configured".formatted(config.trustLists().size()));
 
       if (targets != null && !targets.isEmpty()) {
-        out.printf("Selected targets for generation: %s%n", String.join(", ", targets));
+        out.println("Selected targets for generation: %s".formatted(String.join(", ", targets)));
       } else {
         out.println("Generating all configured authorities, certificates, and trust lists...");
       }
 
-      // Validate that secrets can be resolved safely
-      for (CertificateConfig cert : config.getCertificates()) {
-        if (targets == null || targets.isEmpty() || targets.contains(cert.getId())) {
-          // Verify password resolution without printing the secret value
+      // 2. Validate that secrets can be resolved safely for selected targets
+      for (CertificateConfig cert : config.certificates()) {
+        if (targets == null || targets.isEmpty() || targets.contains(cert.id())) {
           secretResolver.resolveKeystorePassword(cert);
-          out.printf("  ✓ Secret for certificate '%s' resolved successfully%n", cert.getId());
+          out.println("  ✓ Secret for certificate '%s' resolved successfully".formatted(cert.id()));
         }
       }
 
-      out.println("Configuration validated successfully.");
+      // 3. Execute CA, certificate, and keystore generation
+      pkiEngine.generate(config, targets, out);
+
+      out.println("Generation completed successfully.");
       return 0;
     } catch (Exception e) {
-      err.printf("Error: %s%n", e.getMessage());
+      err.println("Error: %s".formatted(e.getMessage()));
       return 1;
     }
-  }
-
-  public File getConfigFile() {
-    return configFile;
-  }
-
-  public void setConfigFile(File configFile) {
-    this.configFile = configFile;
-  }
-
-  public List<String> getTargets() {
-    return new ArrayList<>(targets);
-  }
-
-  public void setTargets(List<String> targets) {
-    this.targets = targets != null ? new ArrayList<>(targets) : new ArrayList<>();
   }
 }

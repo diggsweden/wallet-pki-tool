@@ -119,6 +119,7 @@ certificates:
       - "verifier-backend"
     tradeName: "DIGG Verifier"
     country: "SE"
+    organizationIdentifier: "VATSE-12345678"
 
   # PID Issuer Service Certificate & Keystore
   - id: pid-issuer
