@@ -97,6 +97,30 @@ class PkiEngineTest {
     assertThat(trustStore.size()).isEqualTo(2);
     assertThat(trustStore.isCertificateEntry("pid_issuer")).isTrue();
     assertThat(trustStore.isCertificateEntry("pid_issuer_ca")).isTrue();
+
+    // 8. Verify ETSI TS 119 602 LoTE JWS file exists and is validly signed
+    Path lotePath = tempDir.resolve("trust-source/signed/trusted-entities.json");
+    assertThat(Files.exists(lotePath)).isTrue();
+    String loteJws = Files.readString(lotePath);
+    assertThat(loteJws).isNotEmpty();
+    assertThat(loteJws.split("\\.")).hasSize(3);
+
+    se.digg.wallet.pki.crypto.CertificateAuthorityManager caManager =
+        new se.digg.wallet.pki.crypto.CertificateAuthorityManager();
+    java.security.cert.X509Certificate tsCaCert =
+        caManager.readCertificatePem(caDir.resolve("trust-source-ca/ca.pem"));
+    se.digg.wallet.pki.trustlist.TrustListSigner trustListSigner =
+        new se.digg.wallet.pki.trustlist.TrustListSigner();
+    boolean isLoteValid = trustListSigner.verifyJws(loteJws, tsCaCert.getPublicKey());
+    assertThat(isLoteValid).isTrue();
+
+    // 9. Verify OAuth Status List JWT file exists and is validly signed
+    Path statusListPath = tempDir.resolve("trust-source/signed/status-list.jwt");
+    assertThat(Files.exists(statusListPath)).isTrue();
+    String statusListJwt = Files.readString(statusListPath);
+    assertThat(statusListJwt).isNotEmpty();
+    boolean isStatusListValid = trustListSigner.verifyJws(statusListJwt, tsCaCert.getPublicKey());
+    assertThat(isStatusListValid).isTrue();
   }
 
   @Test
@@ -171,6 +195,108 @@ class PkiEngineTest {
     assertThat(Files.exists(trustStorePath)).isFalse();
   }
 
+  @Test
+  void shouldThrowWhenTrustListReferencesUnknownAuthority(@TempDir Path tempDir) {
+    TrustListConfig invalidTrustList =
+        new TrustListConfig(
+            "bad-lote",
+            "etsi-119-602-lote",
+            "non-existent-ca",
+            "./bad.json");
+
+    PkiConfiguration config =
+        new PkiConfiguration(
+            "test",
+            tempDir.toString(),
+            List.of(new AuthorityConfig("valid-ca", "Valid CA")),
+            List.of(),
+            List.of(invalidTrustList));
+
+    assertThatThrownBy(() -> pkiEngine.generate(config, null, null))
+        .isInstanceOf(PkiConfigurationException.class)
+        .hasMessageContaining(
+            "Trust list 'bad-lote' references unknown signer authority 'non-existent-ca'");
+  }
+
+  @Test
+  void shouldGenerateTrustListsWithCustomEntitiesAndCustomUrl(@TempDir Path tempDir)
+      throws Exception {
+    TrustListConfig customLote =
+        new TrustListConfig(
+            "custom-lote",
+            "etsi-119-602-lote",
+            "trust-source-ca",
+            "./trust-source/signed/custom-lote.json",
+            null,
+            List.of("pid-issuer", "wallet-provider"));
+
+    TrustListConfig customStatusList =
+        new TrustListConfig(
+            "custom-status",
+            "oauth-status-list",
+            "trust-source-ca",
+            "./trust-source/signed/custom-status.jwt",
+            "https://trust.example.se/signed/custom-status.jwt",
+            List.of());
+
+    PkiConfiguration config =
+        new PkiConfiguration(
+            "local",
+            tempDir.toString(),
+            List.of(
+                new AuthorityConfig("verifier-access-ca", "DIGG Wallet Verifier Access CA"),
+                new AuthorityConfig("pid-issuer-ca", "DIGG Wallet PID Issuer CA"),
+                new AuthorityConfig("wallet-provider-ca", "DIGG Wallet Provider CA"),
+                new AuthorityConfig("trust-source-ca", "DIGG Wallet Trust Source CA")),
+            List.of(
+                CertificateConfigTestBuilder.verifierAccessCertificate().build(),
+                CertificateConfigTestBuilder.pidIssuer().build(),
+                CertificateConfigTestBuilder.walletProvider().build()),
+            List.of(customLote, customStatusList));
+
+    pkiEngine.generate(config, null, null);
+
+    // Verify custom LoTE file was generated
+    Path lotePath = tempDir.resolve("trust-source/signed/custom-lote.json");
+    assertThat(Files.exists(lotePath)).isTrue();
+    String loteJws = Files.readString(lotePath);
+    assertThat(loteJws).isNotEmpty();
+
+    // Verify custom Status List JWT contains custom URL in iss and sub
+    Path statusPath = tempDir.resolve("trust-source/signed/custom-status.jwt");
+    assertThat(Files.exists(statusPath)).isTrue();
+    String statusJwt = Files.readString(statusPath);
+    com.nimbusds.jose.JWSObject parsedStatus = com.nimbusds.jose.JWSObject.parse(statusJwt);
+    assertThat(parsedStatus.getPayload().toString())
+        .contains("\"iss\":\"https://trust.example.se/signed/custom-status.jwt\"")
+        .contains("\"sub\":\"https://trust.example.se/signed/custom-status.jwt\"");
+  }
+
+  @Test
+  void shouldThrowWhenLoTeReferencesUnknownEntity(@TempDir Path tempDir) {
+    TrustListConfig customLote =
+        new TrustListConfig(
+            "custom-lote",
+            "etsi-119-602-lote",
+            "valid-ca",
+            "./lote.json",
+            null,
+            List.of("non-existent-entity"));
+
+    PkiConfiguration config =
+        new PkiConfiguration(
+            "test",
+            tempDir.toString(),
+            List.of(new AuthorityConfig("valid-ca", "Valid CA")),
+            List.of(),
+            List.of(customLote));
+
+    assertThatThrownBy(() -> pkiEngine.generate(config, null, null))
+        .isInstanceOf(PkiConfigurationException.class)
+        .hasMessageContaining(
+            "Cannot generate LoTE: entity 'non-existent-entity' certificate not found");
+  }
+
   private PkiConfiguration createTestConfiguration(Path outputDir) {
     List<AuthorityConfig> authorities =
         List.of(
@@ -191,7 +317,12 @@ class PkiEngineTest {
                 "lote",
                 "etsi-119-602-lote",
                 "trust-source-ca",
-                "./trust-source/signed/trusted-entities.json"));
+                "./trust-source/signed/trusted-entities.json"),
+            new TrustListConfig(
+                "status-list",
+                "oauth-status-list",
+                "trust-source-ca",
+                "./trust-source/signed/status-list.jwt"));
 
     return new PkiConfiguration("local", outputDir.toString(), authorities, certificates,
         trustLists);
