@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+# Artifacts Configuration for wallet-pki-tool
+# Defines what to build and where to publish
+
+artifacts:
+  - name: wallet-pki-tool
+    project-type: maven
+    working-directory: .
+    build-type: application
+    config:
+      java-version: 25
+
+containers:
+  - name: wallet-pki-tool
+    from: [wallet-pki-tool]
+    container-file: Containerfile
+    context: .
+    platforms: linux/amd64,linux/arm64
+    registry: ghcr.io
+
+publishers:
+  - type: github-packages
+    artifacts: [wallet-pki-tool]

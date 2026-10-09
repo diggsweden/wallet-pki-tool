@@ -1,6 +1,7 @@
 # Wallet PKI Tool (`wallet-pki-tool`)
 
 [![License](https://img.shields.io/badge/License-CC0_1.0-blue.svg)](LICENSES/CC0-1.0.txt)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/diggsweden/wallet-pki-tool/badge)](https://securityscorecards.dev/viewer/?uri=github.com/diggsweden/wallet-pki-tool)
 
 `wallet-pki-tool` is a dedicated command-line interface (CLI) for automating certificate, keystore (`.p12`), and List of Trusted Entities (LoTE) generation across the European Digital Identity (EUDI) Wallet ecosystem.
 
@@ -24,7 +25,7 @@ It replaces fragile and complex bash scripts with a strongly typed, unit-tested 
 
 ```bash
 # Build the executable fat-JAR
-mvn clean package
+./mvnw clean package
 ```
 
 ### 2. Run CLI
@@ -44,6 +45,27 @@ export WALLET_PROVIDER_KEYSTORE_PASSWORD="my-password"
 
 # Generate all certificates, keystores, and trust lists
 java -jar target/wallet-pki-tool.jar generate --config ./config/certificates/ecosystem.yaml
+```
+
+This populates the configured `outputDir` (`./config/certificates`) with the following structure:
+
+```text
+config/certificates/
+├── ca/
+│   ├── verifier-access-ca/       # ca.pem, ca_private_key.pem, revocation-list.pem
+│   ├── pid-issuer-ca/
+│   ├── wallet-provider-ca/
+│   └── trust-source-ca/
+├── verifier-access-certificate/
+│   └── verifier-access-certificate.p12
+├── issuer/
+│   └── pid_issuer.p12            # Merged service & encryption keys
+├── wallet-provider/
+│   └── wallet_provider.p12
+├── trust-source/
+│   └── signed/
+│       └── trusted-entities.json # Signed LoTE document (ETSI TS 119 602)
+└── trusted_issuers.p12           # Verifier truststore
 ```
 
 ### 3. Selective Target Rotation
@@ -66,10 +88,17 @@ java -jar target/wallet-pki-tool.jar generate \
 
 ## Running with Docker / Podman
 
+You can build the container image locally:
+
+```bash
+podman build -t wallet-pki-tool -f Containerfile .
+```
+
 `wallet-pki-tool` can be executed as a container without installing Java locally:
 
 ```bash
 podman run --rm \
+  --userns=keep-id \
   -v "$PWD":/workspace:z \
   -w /workspace \
   -e VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD \
@@ -77,6 +106,51 @@ podman run --rm \
   -e WALLET_PROVIDER_KEYSTORE_PASSWORD \
   ghcr.io/diggsweden/wallet-pki-tool:latest \
   generate --config ./config/certificates/ecosystem.yaml
+```
+
+---
+
+## Verifying Generated Artifacts
+
+Once generated, you can inspect and verify the contents of the keystores, certificates, and trust lists using standard tools:
+
+### 1. Inspect Keystores (`.p12`) with Java `keytool`
+
+View certificate aliases, key algorithms (EC P-256), and certificate chain hierarchy:
+
+```bash
+keytool -list -v \
+  -keystore ./config/certificates/issuer/pid_issuer.p12 \
+  -storepass "$PID_ISSUER_KEYSTORE_PASSWORD"
+```
+
+### 2. Inspect Keystores (`.p12`) with `openssl`
+
+Display human-readable certificate details (Subject, Issuer, SANs, and QCStatements):
+
+```bash
+openssl pkcs12 \
+  -in ./config/certificates/issuer/pid_issuer.p12 \
+  -nokeys \
+  -passin env:PID_ISSUER_KEYSTORE_PASSWORD | openssl x509 -text -noout
+```
+
+### 3. Inspect Root CA Certificates (`.pem`)
+
+Verify CA Distinguished Name (DN), validity, and basic constraints:
+
+```bash
+openssl x509 \
+  -in ./config/certificates/ca/pid-issuer-ca/ca.pem \
+  -text -noout
+```
+
+### 4. Inspect Signed Trust List (LoTE JSON)
+
+Format and inspect the trusted entities in the LoTE document:
+
+```bash
+cat ./config/certificates/trust-source/signed/trusted-entities.json | jq .
 ```
 
 ---
