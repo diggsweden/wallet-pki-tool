@@ -4,13 +4,16 @@
 
 package se.digg.wallet.pki.generator;
 
+import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -23,15 +26,20 @@ import se.digg.wallet.pki.config.CertificateConfig;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.PkiConfigurationException;
 import se.digg.wallet.pki.config.SecretResolver;
+import se.digg.wallet.pki.config.TrustListConfig;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
 import se.digg.wallet.pki.crypto.CertificateProfileType;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.crypto.KeystoreManager;
+import se.digg.wallet.pki.crypto.PkiCryptoException;
+import se.digg.wallet.pki.trustlist.LoteGenerator;
+import se.digg.wallet.pki.trustlist.StatusListGenerator;
 
 /**
- * Orchestrates generation and persistence of CAs, certificates, and PKCS#12 keystores/truststores.
+ * Orchestrates generation and persistence of CAs, certificates, PKCS#12 keystores, and ETSI TS 119
+ * 602 LoTE / Status List trust tokens.
  */
 public class PkiEngine {
 
@@ -43,6 +51,8 @@ public class PkiEngine {
   private final CertificateProfileIssuer issuer;
   private final KeystoreManager keystoreManager;
   private final SecretResolver secretResolver;
+  private final LoteGenerator loteGenerator;
+  private final StatusListGenerator statusListGenerator;
 
   /** Default constructor initializing all internal crypto components. */
   public PkiEngine() {
@@ -51,11 +61,13 @@ public class PkiEngine {
         new CertificateAuthorityManager(),
         new CertificateProfileIssuer(),
         new KeystoreManager(),
-        new SecretResolver());
+        new SecretResolver(),
+        new LoteGenerator(),
+        new StatusListGenerator());
   }
 
   /**
-   * Constructor with explicit dependencies (useful for testing).
+   * Constructor with partial dependencies for backwards compatibility in tests.
    *
    * @param keyGenerator EC key generator
    * @param caManager CA manager
@@ -69,12 +81,44 @@ public class PkiEngine {
       CertificateProfileIssuer issuer,
       KeystoreManager keystoreManager,
       SecretResolver secretResolver) {
+    this(
+        keyGenerator,
+        caManager,
+        issuer,
+        keystoreManager,
+        secretResolver,
+        new LoteGenerator(),
+        new StatusListGenerator());
+  }
+
+  /**
+   * Full constructor with explicit dependencies (useful for testing).
+   *
+   * @param keyGenerator EC key generator
+   * @param caManager CA manager
+   * @param issuer certificate profile issuer
+   * @param keystoreManager keystore manager
+   * @param secretResolver secret resolver
+   * @param loteGenerator LoTE generator
+   * @param statusListGenerator Status list generator
+   */
+  public PkiEngine(
+      EcKeyGenerator keyGenerator,
+      CertificateAuthorityManager caManager,
+      CertificateProfileIssuer issuer,
+      KeystoreManager keystoreManager,
+      SecretResolver secretResolver,
+      LoteGenerator loteGenerator,
+      StatusListGenerator statusListGenerator) {
     this.keyGenerator = Objects.requireNonNull(keyGenerator, "keyGenerator must not be null");
     this.caManager = Objects.requireNonNull(caManager, "caManager must not be null");
     this.issuer = Objects.requireNonNull(issuer, "issuer must not be null");
     this.keystoreManager =
         Objects.requireNonNull(keystoreManager, "keystoreManager must not be null");
     this.secretResolver = Objects.requireNonNull(secretResolver, "secretResolver must not be null");
+    this.loteGenerator = Objects.requireNonNull(loteGenerator, "loteGenerator must not be null");
+    this.statusListGenerator =
+        Objects.requireNonNull(statusListGenerator, "statusListGenerator must not be null");
   }
 
   /**
@@ -178,7 +222,8 @@ public class PkiEngine {
             || targets.contains("verifier-access-certificate");
 
     if (shouldUpdateTrustStore && caMap.containsKey("pid-issuer-ca")) {
-      X509Certificate pidIssuerCert = findPidIssuerCertificate(issuedCerts, config, baseOutputDir);
+      X509Certificate pidIssuerCert =
+          findCertificate("pid-issuer", issuedCerts, caMap, config, baseOutputDir);
       CertificateConfig verifierConfig =
           config.certificates().stream()
               .filter(c -> "verifier-access-certificate".equals(c.id()))
@@ -215,23 +260,161 @@ public class PkiEngine {
         }
       }
     }
+
+    // 4. Generate Trust Lists (LoTE and Status Lists)
+    if (config.trustLists() != null && !config.trustLists().isEmpty()) {
+      for (TrustListConfig trustListConfig : config.trustLists()) {
+        if (isSelective && !targets.contains(trustListConfig.id())) {
+          continue;
+        }
+
+        CertificateAuthority signerCa = caMap.get(trustListConfig.signerAuthority());
+        if (signerCa == null) {
+          throw new PkiConfigurationException(
+              "Trust list '%s' references unknown signer authority '%s'"
+                  .formatted(trustListConfig.id(), trustListConfig.signerAuthority()));
+        }
+
+        Path outputPath = baseOutputDir.resolve(trustListConfig.outputFile());
+        Path parentDir = outputPath.getParent();
+        if (parentDir != null) {
+          try {
+            Files.createDirectories(parentDir);
+          } catch (IOException e) {
+            throw new PkiCryptoException(
+                "Failed to create directory for trust list: " + parentDir, e);
+          }
+        }
+
+        if (TrustListConfig.TYPE_LOTE.equals(trustListConfig.type())) {
+          List<X509Certificate> loteCerts = new ArrayList<>();
+          if (trustListConfig.entities() != null && !trustListConfig.entities().isEmpty()) {
+            for (String entityId : trustListConfig.entities()) {
+              X509Certificate cert =
+                  findCertificate(entityId, issuedCerts, caMap, config, baseOutputDir);
+              if (cert == null) {
+                throw new PkiConfigurationException(
+                    "Cannot generate LoTE: entity '%s' certificate not found"
+                        .formatted(entityId));
+              }
+              loteCerts.add(cert);
+            }
+          } else {
+            X509Certificate walletCert =
+                findCertificate("wallet-provider-ca", issuedCerts, caMap, config, baseOutputDir);
+            if (walletCert == null) {
+              walletCert =
+                  findCertificate("wallet-provider", issuedCerts, caMap, config, baseOutputDir);
+            }
+            X509Certificate pidCert =
+                findCertificate("pid-issuer-ca", issuedCerts, caMap, config, baseOutputDir);
+            if (pidCert == null) {
+              pidCert =
+                  findCertificate("pid-issuer", issuedCerts, caMap, config, baseOutputDir);
+            }
+
+            if (walletCert == null || pidCert == null) {
+              throw new PkiConfigurationException(
+                  "Cannot generate LoTE: missing wallet-provider or pid-issuer certificates");
+            }
+            loteCerts.add(walletCert);
+            loteCerts.add(pidCert);
+          }
+
+          String signedLoteJws =
+              loteGenerator.buildAndSignLote(
+                  loteCerts, signerCa.privateKey(), signerCa.certificate());
+
+          try {
+            Files.writeString(outputPath, signedLoteJws, StandardCharsets.UTF_8);
+          } catch (IOException e) {
+            throw new PkiCryptoException("Failed to write LoTE JWS to: " + outputPath, e);
+          }
+
+          log.info("Trust list '{}' (ETSI TS 119 602) generated", trustListConfig.id());
+          if (logger != null) {
+            logger.println(
+                "  ✓ Trust list '%s' (ETSI TS 119 602) generated".formatted(trustListConfig.id()));
+          }
+        } else if (TrustListConfig.TYPE_STATUS_LIST.equals(trustListConfig.type())) {
+          Path fileNamePath = outputPath.getFileName();
+          String fileName = fileNamePath != null ? fileNamePath.toString() : "status-list.jwt";
+          String statusListUrl =
+              (trustListConfig.url() != null && !trustListConfig.url().isBlank())
+                  ? trustListConfig.url()
+                  : "http://trust-source/signed/" + fileName;
+          String signedStatusListJwt =
+              statusListGenerator.buildAndSignStatusList(
+                  statusListUrl,
+                  null,
+                  signerCa.privateKey(),
+                  signerCa.certificate(),
+                  null,
+                  null);
+
+          try {
+            Files.writeString(outputPath, signedStatusListJwt, StandardCharsets.UTF_8);
+          } catch (IOException e) {
+            throw new PkiCryptoException(
+                "Failed to write Status List JWT to: " + outputPath, e);
+          }
+
+          log.info("Status list '{}' (OAuth Status List) generated", trustListConfig.id());
+          if (logger != null) {
+            logger.println(
+                "  ✓ Status list '%s' (OAuth Status List) generated"
+                    .formatted(trustListConfig.id()));
+          }
+        } else {
+          throw new PkiConfigurationException(
+              "Unsupported trust list type '%s' for id '%s'"
+                  .formatted(trustListConfig.type(), trustListConfig.id()));
+        }
+      }
+    }
   }
 
-  private X509Certificate findPidIssuerCertificate(
-      Map<String, X509Certificate> issuedCerts, PkiConfiguration config, Path baseOutputDir) {
-    if (issuedCerts.containsKey("pid-issuer")) {
-      return issuedCerts.get("pid-issuer");
+  private X509Certificate findCertificate(
+      String id,
+      Map<String, X509Certificate> issuedCerts,
+      Map<String, CertificateAuthority> caMap,
+      PkiConfiguration config,
+      Path baseOutputDir) {
+    if (issuedCerts != null && issuedCerts.containsKey(id)) {
+      return issuedCerts.get(id);
     }
-    CertificateConfig pidConfig =
-        config.certificates().stream()
-            .filter(c -> "pid-issuer".equals(c.id()))
-            .findFirst()
-            .orElse(null);
-    if (pidConfig != null) {
-      Path p12Path = baseOutputDir.resolve(pidConfig.keystore());
-      Path certDir = p12Path.getParent();
-      if (certDir != null) {
-        Path certPath = certDir.resolve("%s.crt".formatted(pidConfig.id()));
+    if (caMap != null && caMap.containsKey(id)) {
+      return caMap.get(id).certificate();
+    }
+    if (config.certificates() != null) {
+      CertificateConfig certConfig =
+          config.certificates().stream()
+              .filter(c -> id.equals(c.id()))
+              .findFirst()
+              .orElse(null);
+      if (certConfig != null && certConfig.keystore() != null) {
+        Path p12Path = baseOutputDir.resolve(certConfig.keystore());
+        Path certDir = p12Path.getParent();
+        if (certDir != null) {
+          Path certPath = certDir.resolve("%s.crt".formatted(certConfig.id()));
+          if (Files.exists(certPath)) {
+            return caManager.readCertificatePem(certPath);
+          }
+        }
+      }
+    }
+    if (config.authorities() != null) {
+      AuthorityConfig authConfig =
+          config.authorities().stream()
+              .filter(a -> id.equals(a.id()))
+              .findFirst()
+              .orElse(null);
+      if (authConfig != null) {
+        Path caDir = baseOutputDir.resolve("ca");
+        Path certPath =
+            authConfig.certFile() != null
+                ? baseOutputDir.resolve(authConfig.certFile())
+                : caDir.resolve("%s.crt".formatted(authConfig.id()));
         if (Files.exists(certPath)) {
           return caManager.readCertificatePem(certPath);
         }

@@ -142,13 +142,22 @@ certificates:
       - "wallet-provider"
 
 # ---------------------------------------------------------------------------
-# 3. Trust Lists & Signed Tokens (LoTE - ETSI TS 119 602)
+# 3. Trust Lists & Signed Tokens (LoTE - ETSI TS 119 602 / OAuth Status List)
 # ---------------------------------------------------------------------------
 trustLists:
   - id: lote
     type: etsi-119-602-lote
     signerAuthority: trust-source-ca
     outputFile: ./trust-source/signed/trusted-entities.json
+    entities:
+      - wallet-provider
+      - pid-issuer
+
+  - id: status-list
+    type: oauth-status-list
+    signerAuthority: trust-source-ca
+    outputFile: ./trust-source/signed/status-list.jwt
+    url: "https://trust.example.se/signed/status-list.jwt"
 ```
 
 ---
@@ -180,12 +189,12 @@ trustLists:
 | Property | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | `String` | **Yes** | Unique identifier for the certificate. |
-| `type` | `String` | No | Profile type (`relying-party-access`, `pid-issuer-service`, `wallet-provider-service`). |
+| `type` | `String` | No | Profile type (`relying-party-access`, `pid-issuer-service`, `wallet-provider-service`, `trust-source-signer`, `encryption`). |
 | `ca` | `String` | **Yes** | ID of the authority used to issue this certificate. |
 | `keystore` | `String` | **Yes** | Relative path where the `.p12` keystore should be written. |
 | `passwordEnv` | `String` | Conditional | Environment variable name containing the keystore password. |
 | `passwordFile` | `String` | Conditional | File path containing the keystore password (alternative to `passwordEnv`). |
-| `sans` | `List<String>` | No | Subject Alternative Names (DNS hostnames or IP addresses). |
+| `sans` | `List<String>` | No | Subject Alternative Names (DNS hostnames, IP addresses, or URIs). |
 | `tradeName` | `String` | No | Trade name for Relying Party certificates. |
 | `country` | `String` | No | Two-letter country code (default: `SE`). |
 | `organizationIdentifier` | `String` | No | Legal entity identifier (e.g. `VATSE-...` or `NTRSE-...`). |
@@ -195,9 +204,11 @@ trustLists:
 | Property | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `id` | `String` | **Yes** | Unique identifier for the trust list. |
-| `type` | `String` | No | Trust list format (e.g. `etsi-119-602-lote`). |
+| `type` | `String` | No | Trust list format (`etsi-119-602-lote` or `oauth-status-list`, default: `etsi-119-602-lote`). |
 | `signerAuthority` | `String` | **Yes** | Authority ID used to sign the trust list. |
 | `outputFile` | `String` | **Yes** | Output destination path for the signed JSON/JWT. |
+| `url` | `String` | No | Optional issuer URL (`iss`/`sub`) for OAuth Status List JWTs. |
+| `entities` | `List<String>` | No | Optional list of entity/certificate IDs to include in the LoTE. Defaults to auto-discovering wallet-provider and pid-issuer. |
 
 ---
 

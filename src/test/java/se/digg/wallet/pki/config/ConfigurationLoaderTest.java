@@ -145,4 +145,78 @@ class ConfigurationLoaderTest {
         .isInstanceOf(PkiConfigurationException.class)
         .hasMessageContaining("must specify passwordEnv or passwordFile");
   }
+
+  @Test
+  void shouldThrowWhenTrustListReferencesUnknownSignerAuthority(@TempDir Path tempDir)
+      throws IOException {
+    Path invalidYaml = tempDir.resolve("unknown-trust-signer.yaml");
+    Files.writeString(
+        invalidYaml,
+        """
+            outputDir: ./certs
+            authorities:
+              - id: ca-1
+                commonName: "CA One"
+            trustLists:
+              - id: lote
+                type: etsi-119-602-lote
+                signerAuthority: non-existent-ca
+                outputFile: ./lote.jwt
+            """);
+
+    assertThatThrownBy(() -> loader.load(invalidYaml))
+        .isInstanceOf(PkiConfigurationException.class)
+        .hasMessageContaining(
+            "Trust list 'lote' references unknown signer authority 'non-existent-ca'");
+  }
+
+  @Test
+  void shouldThrowWhenTrustListReferencesUnknownEntity(@TempDir Path tempDir) throws IOException {
+    Path invalidYaml = tempDir.resolve("unknown-entity.yaml");
+    Files.writeString(
+        invalidYaml,
+        """
+            outputDir: ./certs
+            authorities:
+              - id: ca-1
+                commonName: "CA One"
+            trustLists:
+              - id: lote
+                type: etsi-119-602-lote
+                signerAuthority: ca-1
+                outputFile: ./lote.jwt
+                entities:
+                  - unknown-entity-id
+            """);
+
+    assertThatThrownBy(() -> loader.load(invalidYaml))
+        .isInstanceOf(PkiConfigurationException.class)
+        .hasMessageContaining("Trust list 'lote' references unknown entity 'unknown-entity-id'");
+  }
+
+  @Test
+  void shouldThrowWhenDuplicateTrustListId(@TempDir Path tempDir) throws IOException {
+    Path invalidYaml = tempDir.resolve("dup-trust-id.yaml");
+    Files.writeString(
+        invalidYaml,
+        """
+            outputDir: ./certs
+            authorities:
+              - id: ca-1
+                commonName: "CA One"
+            trustLists:
+              - id: lote
+                type: etsi-119-602-lote
+                signerAuthority: ca-1
+                outputFile: ./lote1.jwt
+              - id: lote
+                type: etsi-119-602-lote
+                signerAuthority: ca-1
+                outputFile: ./lote2.jwt
+            """);
+
+    assertThatThrownBy(() -> loader.load(invalidYaml))
+        .isInstanceOf(PkiConfigurationException.class)
+        .hasMessageContaining("Duplicate trust list ID found: lote");
+  }
 }

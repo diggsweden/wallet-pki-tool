@@ -97,7 +97,7 @@ public class ConfigurationLoader {
       }
     }
 
-    // 3. Validate trust lists (unique IDs and existing signer CA references)
+    // 3. Validate trust lists (unique IDs, existing signer CA references, and entity references)
     Set<String> trustListIds = new HashSet<>();
     for (TrustListConfig trustList : config.trustLists()) {
       if (!trustListIds.add(trustList.id())) {
@@ -109,6 +109,15 @@ public class ConfigurationLoader {
         throw new PkiConfigurationException(
             "Trust list '%s' references unknown signer authority '%s'"
                 .formatted(trustList.id(), trustList.signerAuthority()));
+      }
+      if (trustList.entities() != null && !trustList.entities().isEmpty()) {
+        for (String entity : trustList.entities()) {
+          if (!authorityIds.contains(entity) && !certificateIds.contains(entity)) {
+            throw new PkiConfigurationException(
+                "Trust list '%s' references unknown entity '%s'"
+                    .formatted(trustList.id(), entity));
+          }
+        }
       }
     }
   }
