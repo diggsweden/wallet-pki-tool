@@ -6,47 +6,31 @@ package se.digg.wallet.pki.config;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-/** Configuration model for a trust list (such as LoTE). */
+/** Configuration model for a trust list (such as LoTE or OAuth Status List). */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class TrustListConfig {
+public record TrustListConfig(
+    String id,
+    String type,
+    String signerAuthority,
+    String outputFile) {
 
-  private String id;
-  private String type;
-  private String signerAuthority;
-  private String outputFile;
-
-  /** Default constructor for Jackson. */
-  public TrustListConfig() {}
-
-  public String getId() {
-    return id;
-  }
-
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public String getType() {
-    return type;
-  }
-
-  public void setType(String type) {
-    this.type = type;
-  }
-
-  public String getSignerAuthority() {
-    return signerAuthority;
-  }
-
-  public void setSignerAuthority(String signerAuthority) {
-    this.signerAuthority = signerAuthority;
-  }
-
-  public String getOutputFile() {
-    return outputFile;
-  }
-
-  public void setOutputFile(String outputFile) {
-    this.outputFile = outputFile;
+  /**
+   * Compact constructor enforcing model invariants and default type.
+   */
+  public TrustListConfig {
+    if (id == null || id.isBlank()) {
+      throw new IllegalArgumentException("Trust list 'id' is required and cannot be blank");
+    }
+    if (signerAuthority == null || signerAuthority.isBlank()) {
+      throw new IllegalArgumentException(
+          "Trust list 'signerAuthority' is required for: %s".formatted(id));
+    }
+    if (outputFile == null || outputFile.isBlank()) {
+      throw new IllegalArgumentException(
+          "Trust list 'outputFile' is required for: %s".formatted(id));
+    }
+    if (type == null || type.isBlank()) {
+      type = "etsi-119-602-lote";
+    }
   }
 }

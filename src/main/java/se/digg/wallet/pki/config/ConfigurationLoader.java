@@ -4,15 +4,14 @@
 
 package se.digg.wallet.pki.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /** Loads and validates PKI YAML configuration files. */
 public class ConfigurationLoader {
@@ -21,8 +20,7 @@ public class ConfigurationLoader {
 
   /** Default constructor initializing the YAML mapper. */
   public ConfigurationLoader() {
-    this.yamlMapper = new YAMLMapper();
-    this.yamlMapper.registerModule(new JavaTimeModule());
+    this.yamlMapper = YAMLMapper.builder().build();
   }
 
   /**
@@ -38,102 +36,79 @@ public class ConfigurationLoader {
     }
 
     if (!Files.exists(configPath)) {
-      throw new PkiConfigurationException("Configuration file not found: " + configPath);
+      throw new PkiConfigurationException("Configuration file not found: %s".formatted(configPath));
     }
 
     if (Files.isDirectory(configPath)) {
       throw new PkiConfigurationException(
-          "Configuration path is a directory, not a file: " + configPath);
+          "Configuration path is a directory, not a file: %s".formatted(configPath));
     }
 
     PkiConfiguration config;
     try {
       config = yamlMapper.readValue(configPath.toFile(), PkiConfiguration.class);
-    } catch (IOException e) {
+    } catch (JacksonException e) {
+      String message = e.getMessage();
+      if (e.getCause() instanceof IllegalArgumentException iae) {
+        message = iae.getMessage();
+      }
       throw new PkiConfigurationException(
-          "Failed to parse YAML configuration file: " + configPath, e);
+          "Failed to parse YAML configuration file: %s (%s)".formatted(configPath, message), e);
     }
 
-    validate(config, configPath.toFile());
+    validateCrossModelRelations(config, configPath.toFile());
     return config;
   }
 
   /**
-   * Validates the configuration model.
+   * Validates relationships across different models in the configuration.
    *
    * @param config the configuration to validate
    * @param sourceFile the source file reference for error reporting
    */
-  private void validate(PkiConfiguration config, File sourceFile) {
+  private void validateCrossModelRelations(PkiConfiguration config, File sourceFile) {
     if (config == null) {
       throw new PkiConfigurationException(
-          "Configuration is empty in file: " + sourceFile.getPath());
+          "Configuration is empty in file: %s".formatted(sourceFile.getPath()));
     }
 
-    if (config.getOutputDir() == null || config.getOutputDir().isBlank()) {
-      throw new PkiConfigurationException(
-          "Field 'outputDir' is required in configuration: " + sourceFile.getPath());
-    }
-
+    // 1. Validate Certificate Authorities (unique IDs)
     Set<String> authorityIds = new HashSet<>();
-    for (AuthorityConfig authority : config.getAuthorities()) {
-      if (authority.getId() == null || authority.getId().isBlank()) {
-        throw new PkiConfigurationException("Authority ID is required in: " + sourceFile.getPath());
-      }
-      if (!authorityIds.add(authority.getId())) {
-        throw new PkiConfigurationException("Duplicate authority ID found: " + authority.getId());
-      }
-      if (authority.getCommonName() == null || authority.getCommonName().isBlank()) {
+    for (AuthorityConfig authority : config.authorities()) {
+      if (!authorityIds.add(authority.id())) {
         throw new PkiConfigurationException(
-            "Authority 'commonName' is required for: " + authority.getId());
+            "Duplicate authority ID found: %s in %s".formatted(authority.id(),
+                sourceFile.getPath()));
       }
     }
 
+    // 2. Validate service certificates (unique IDs and existing CA references)
     Set<String> certificateIds = new HashSet<>();
-    for (CertificateConfig certificate : config.getCertificates()) {
-      if (certificate.getId() == null || certificate.getId().isBlank()) {
+    for (CertificateConfig certificate : config.certificates()) {
+      if (!certificateIds.add(certificate.id())) {
         throw new PkiConfigurationException(
-            "Certificate ID is required in: " + sourceFile.getPath());
+            "Duplicate certificate ID found: %s in %s"
+                .formatted(certificate.id(), sourceFile.getPath()));
       }
-      if (!certificateIds.add(certificate.getId())) {
+      if (!authorityIds.contains(certificate.ca())) {
         throw new PkiConfigurationException(
-            "Duplicate certificate ID found: " + certificate.getId());
-      }
-      if (certificate.getCa() == null || certificate.getCa().isBlank()) {
-        throw new PkiConfigurationException(
-            "Certificate 'ca' is required for: " + certificate.getId());
-      }
-      if (!authorityIds.contains(certificate.getCa())) {
-        throw new PkiConfigurationException(
-            String.format(
-                "Certificate '%s' references unknown authority '%s'",
-                certificate.getId(), certificate.getCa()));
-      }
-      if (certificate.getKeystore() == null || certificate.getKeystore().isBlank()) {
-        throw new PkiConfigurationException(
-            "Certificate 'keystore' path is required for: " + certificate.getId());
-      }
-      boolean hasEnv =
-          certificate.getPasswordEnv() != null && !certificate.getPasswordEnv().isBlank();
-      boolean hasFile =
-          certificate.getPasswordFile() != null && !certificate.getPasswordFile().isBlank();
-      if (!hasEnv && !hasFile) {
-        throw new PkiConfigurationException(
-            "Certificate '" + certificate.getId() + "' must specify passwordEnv or passwordFile");
+            "Certificate '%s' references unknown authority '%s'"
+                .formatted(certificate.id(), certificate.ca()));
       }
     }
 
+    // 3. Validate trust lists (unique IDs and existing signer CA references)
     Set<String> trustListIds = new HashSet<>();
-    for (TrustListConfig trustList : config.getTrustLists()) {
-      if (trustList.getId() == null || trustList.getId().isBlank()) {
-        throw new PkiConfigurationException("TrustList ID is required in: " + sourceFile.getPath());
-      }
-      if (!trustListIds.add(trustList.getId())) {
-        throw new PkiConfigurationException("Duplicate trustList ID found: " + trustList.getId());
-      }
-      if (trustList.getOutputFile() == null || trustList.getOutputFile().isBlank()) {
+    for (TrustListConfig trustList : config.trustLists()) {
+      if (!trustListIds.add(trustList.id())) {
         throw new PkiConfigurationException(
-            "TrustList 'outputFile' path is required for: " + trustList.getId());
+            "Duplicate trust list ID found: %s in %s"
+                .formatted(trustList.id(), sourceFile.getPath()));
+      }
+      if (!authorityIds.contains(trustList.signerAuthority())) {
+        throw new PkiConfigurationException(
+            "Trust list '%s' references unknown signer authority '%s'"
+                .formatted(trustList.id(), trustList.signerAuthority()));
       }
     }
   }

@@ -8,54 +8,42 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /** Configuration model for a Certificate Authority (CA). */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class AuthorityConfig {
+public record AuthorityConfig(
+    String id,
+    String commonName,
+    String keyType,
+    String keyFile,
+    String certFile) {
 
-  private String id;
-  private String commonName;
-  private String keyType = "EC_P256";
-  private String keyFile;
-  private String certFile;
-
-  /** Default constructor for Jackson. */
-  public AuthorityConfig() {}
-
-  public String getId() {
-    return id;
+  /**
+   * Compact constructor enforcing model invariants and providing default keyType.
+   */
+  public AuthorityConfig {
+    if (id == null || id.isBlank()) {
+      throw new IllegalArgumentException("Authority 'id' is required and cannot be blank");
+    }
+    if (commonName == null || commonName.isBlank()) {
+      throw new IllegalArgumentException(
+          "Authority 'commonName' is required for authority: %s".formatted(id));
+    }
+    if (keyType == null || keyType.isBlank()) {
+      keyType = "EC_P256";
+    }
+    if ((keyFile != null && certFile == null) || (keyFile == null && certFile != null)) {
+      throw new IllegalArgumentException(
+          "Both 'keyFile' and 'certFile' must be provided when configuring external CA for"
+              + " authority: %s"
+                  .formatted(id));
+    }
   }
 
-  public void setId(String id) {
-    this.id = id;
-  }
-
-  public String getCommonName() {
-    return commonName;
-  }
-
-  public void setCommonName(String commonName) {
-    this.commonName = commonName;
-  }
-
-  public String getKeyType() {
-    return keyType;
-  }
-
-  public void setKeyType(String keyType) {
-    this.keyType = keyType;
-  }
-
-  public String getKeyFile() {
-    return keyFile;
-  }
-
-  public void setKeyFile(String keyFile) {
-    this.keyFile = keyFile;
-  }
-
-  public String getCertFile() {
-    return certFile;
-  }
-
-  public void setCertFile(String certFile) {
-    this.certFile = certFile;
+  /**
+   * Convenience constructor for basic CA configuration.
+   *
+   * @param id authority identifier
+   * @param commonName common name
+   */
+  public AuthorityConfig(String id, String commonName) {
+    this(id, commonName, "EC_P256", null, null);
   }
 }

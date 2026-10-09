@@ -42,40 +42,37 @@ public class SecretResolver {
       throw new PkiConfigurationException("Certificate configuration cannot be null");
     }
 
-    if (config.getPasswordEnv() != null && !config.getPasswordEnv().isBlank()) {
-      String value = envProvider.apply(config.getPasswordEnv());
+    // 1. Resolve from environment variable if configured
+    if (config.passwordEnv() != null && !config.passwordEnv().isBlank()) {
+      String value = envProvider.apply(config.passwordEnv());
       if (value == null || value.isBlank()) {
         throw new PkiConfigurationException(
-            String.format(
-                "Environment variable '%s' for certificate '%s' is not set or empty",
-                config.getPasswordEnv(), config.getId()));
+            "Environment variable '%s' for certificate '%s' is not set or empty"
+                .formatted(config.passwordEnv(), config.id()));
       }
       return value;
     }
 
-    if (config.getPasswordFile() != null && !config.getPasswordFile().isBlank()) {
-      Path path = Path.of(config.getPasswordFile());
+    // 2. Resolve from password file if configured (e.g. Kubernetes secret volume)
+    if (config.passwordFile() != null && !config.passwordFile().isBlank()) {
+      Path path = Path.of(config.passwordFile());
       if (!Files.exists(path)) {
         throw new PkiConfigurationException(
-            String.format(
-                "Password file '%s' for certificate '%s' does not exist",
-                config.getPasswordFile(), config.getId()));
+            "Password file '%s' for certificate '%s' does not exist"
+                .formatted(config.passwordFile(), config.id()));
       }
       try {
         return Files.readString(path, StandardCharsets.UTF_8).trim();
       } catch (IOException e) {
         throw new PkiConfigurationException(
-            String.format(
-                "Failed to read password file '%s' for certificate '%s'",
-                config.getPasswordFile(), config.getId()),
+            "Failed to read password file '%s' for certificate '%s'"
+                .formatted(config.passwordFile(), config.id()),
             e);
       }
     }
 
     throw new PkiConfigurationException(
-        String.format(
-            "No password configuration (passwordEnv or passwordFile) specified"
-                + " for certificate '%s'",
-            config.getId()));
+        "No password configuration (passwordEnv or passwordFile) specified for certificate '%s'"
+            .formatted(config.id()));
   }
 }

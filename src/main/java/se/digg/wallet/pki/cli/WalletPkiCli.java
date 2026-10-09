@@ -91,8 +91,4 @@ public class WalletPkiCli {
   public int execute(String... args) {
     return commandLine.execute(args);
   }
-
-  public CommandLine getCommandLine() {
-    return commandLine;
-  }
 }
