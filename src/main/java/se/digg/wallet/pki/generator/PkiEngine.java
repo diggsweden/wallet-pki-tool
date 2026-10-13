@@ -36,6 +36,7 @@ import se.digg.wallet.pki.crypto.KeystoreManager;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
 import se.digg.wallet.pki.trustlist.LoteGenerator;
 import se.digg.wallet.pki.trustlist.StatusListGenerator;
+import se.digg.wallet.pki.trustlist.TrustListSigner;
 
 /**
  * Orchestrates generation and persistence of CAs, certificates, PKCS#12 keystores, and ETSI TS 119
@@ -53,6 +54,7 @@ public class PkiEngine {
   private final SecretResolver secretResolver;
   private final LoteGenerator loteGenerator;
   private final StatusListGenerator statusListGenerator;
+  private final TrustListSigner trustListSigner;
 
   /** Default constructor initializing all internal crypto components. */
   public PkiEngine() {
@@ -63,7 +65,8 @@ public class PkiEngine {
         new KeystoreManager(),
         new SecretResolver(),
         new LoteGenerator(),
-        new StatusListGenerator());
+        new StatusListGenerator(),
+        new TrustListSigner());
   }
 
   /**
@@ -88,11 +91,12 @@ public class PkiEngine {
         keystoreManager,
         secretResolver,
         new LoteGenerator(),
-        new StatusListGenerator());
+        new StatusListGenerator(),
+        new TrustListSigner());
   }
 
   /**
-   * Full constructor with explicit dependencies (useful for testing).
+   * Constructor with explicit dependencies for backwards compatibility in tests.
    *
    * @param keyGenerator EC key generator
    * @param caManager CA manager
@@ -110,6 +114,38 @@ public class PkiEngine {
       SecretResolver secretResolver,
       LoteGenerator loteGenerator,
       StatusListGenerator statusListGenerator) {
+    this(
+        keyGenerator,
+        caManager,
+        issuer,
+        keystoreManager,
+        secretResolver,
+        loteGenerator,
+        statusListGenerator,
+        new TrustListSigner());
+  }
+
+  /**
+   * Full constructor with explicit dependencies (useful for testing).
+   *
+   * @param keyGenerator EC key generator
+   * @param caManager CA manager
+   * @param issuer certificate profile issuer
+   * @param keystoreManager keystore manager
+   * @param secretResolver secret resolver
+   * @param loteGenerator LoTE generator
+   * @param statusListGenerator Status list generator
+   * @param trustListSigner Trust list signer
+   */
+  public PkiEngine(
+      EcKeyGenerator keyGenerator,
+      CertificateAuthorityManager caManager,
+      CertificateProfileIssuer issuer,
+      KeystoreManager keystoreManager,
+      SecretResolver secretResolver,
+      LoteGenerator loteGenerator,
+      StatusListGenerator statusListGenerator,
+      TrustListSigner trustListSigner) {
     this.keyGenerator = Objects.requireNonNull(keyGenerator, "keyGenerator must not be null");
     this.caManager = Objects.requireNonNull(caManager, "caManager must not be null");
     this.issuer = Objects.requireNonNull(issuer, "issuer must not be null");
@@ -119,6 +155,8 @@ public class PkiEngine {
     this.loteGenerator = Objects.requireNonNull(loteGenerator, "loteGenerator must not be null");
     this.statusListGenerator =
         Objects.requireNonNull(statusListGenerator, "statusListGenerator must not be null");
+    this.trustListSigner =
+        Objects.requireNonNull(trustListSigner, "trustListSigner must not be null");
   }
 
   /**
@@ -194,9 +232,13 @@ public class PkiEngine {
         // Handle multi-key merged store for PID Issuer vs standard single-key store
         if (CertificateProfileType.PID_ISSUER_SERVICE.matches(certConfig.type())) {
           generatePidIssuerKeystore(
-              certConfig, serviceKey, serviceCert, signingCa, certDir, p12Path, password);
+              certConfig, serviceKey, serviceCert, signingCa, certDir, p12Path, password,
+              baseOutputDir);
         } else {
-          String alias = certConfig.id().replace('-', '_');
+          String alias =
+              certConfig.alias() != null && !certConfig.alias().isBlank()
+                  ? certConfig.alias()
+                  : certConfig.id().replace('-', '_');
           KeyStore keyStore =
               keystoreManager.createSingleKeyStore(
                   alias, serviceKey.getPrivate(), serviceCert, signingCa.certificate(), password);
@@ -430,7 +472,8 @@ public class PkiEngine {
       CertificateAuthority signingCa,
       Path certDir,
       Path p12Path,
-      char[] password) {
+      char[] password,
+      Path baseOutputDir) {
     // Generate nonce-encryption key and certificate
     KeyPair nonceKey = keyGenerator.generateKeyPair();
     X509Certificate nonceCert =
@@ -482,6 +525,30 @@ public class PkiEngine {
         new Certificate[] {requestCert, signingCa.certificate()});
 
     keystoreManager.saveKeyStore(keyStore, p12Path, password);
+
+    // Generate issuer_wrprc.jwt if the parent ecosystem pid-issuer directory exists
+    Path pidIssuerDir = baseOutputDir.resolve("../pid-issuer");
+    if (Files.isDirectory(pidIssuerDir)) {
+      try {
+        String payloadJson = "{\"iss\":\"did:web:localhost\",\"sub\":\"did:web:localhost\"}";
+        String signedJwt =
+            trustListSigner.signJws(payloadJson, serviceKey.getPrivate(), serviceCert,
+                "rc-wrp+jwt");
+        Files.writeString(
+            pidIssuerDir.resolve("issuer_wrprc.jwt"), signedJwt, StandardCharsets.UTF_8);
+        String certB64 = java.util.Base64.getEncoder().encodeToString(serviceCert.getEncoded());
+        String preJwt =
+            "{\n  \"headers\": {\"typ\":\"rc-wrp+jwt\",\"alg\":\"ES256\",\"x5c\":[\""
+                + certB64
+                + "\"]},\n  \"payload\": "
+                + payloadJson
+                + "\n}";
+        Files.writeString(
+            pidIssuerDir.resolve("issuer_wrprc.json"), preJwt, StandardCharsets.UTF_8);
+      } catch (Exception e) {
+        log.warn("Could not write issuer_wrprc.jwt to {}", pidIssuerDir, e);
+      }
+    }
   }
 
   private void generateTrustStore(
@@ -500,6 +567,10 @@ public class PkiEngine {
     Path verifierTrustStorePath =
         baseOutputDir.resolve("verifier-access-certificate").resolve(TRUSTSTORE_FILENAME);
     keystoreManager.saveKeyStore(trustStore, verifierTrustStorePath, password);
+
+    Path trustValidatorPath =
+        baseOutputDir.resolve("trust-validator").resolve(TRUSTSTORE_FILENAME);
+    keystoreManager.saveKeyStore(trustStore, trustValidatorPath, password);
 
     log.info("Truststore '{}' generated", TRUSTSTORE_FILENAME);
     if (logger != null) {

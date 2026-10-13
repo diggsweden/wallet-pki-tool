@@ -108,6 +108,8 @@ public class CertificateProfileIssuer {
     return switch (profileType) {
       case RELYING_PARTY_ACCESS -> issueRelyingPartyAccessCertificate(
           certConfig, commonName, subjectPublicKey, signingCa);
+      case RELYING_PARTY_REGISTRATION -> issueRelyingPartyRegistrationCertificate(
+          certConfig, commonName, subjectPublicKey, signingCa);
       case PID_ISSUER_SERVICE, WALLET_PROVIDER_SERVICE -> issueEudiServiceCertificate(
           certConfig, commonName, subjectPublicKey, signingCa);
       case TRUST_SOURCE_SIGNER -> issueTrustSourceSignerCertificate(
@@ -145,12 +147,6 @@ public class CertificateProfileIssuer {
           builder.addExtension(
               Extension.keyUsage, true,
               new KeyUsage(KeyUsage.digitalSignature | KeyUsage.nonRepudiation));
-          builder.addExtension(
-              Extension.extendedKeyUsage,
-              false,
-              new ExtendedKeyUsage(
-                  new KeyPurposeId[] {KeyPurposeId.id_kp_clientAuth,
-                      KeyPurposeId.id_kp_serverAuth}));
           addSubjectAlternativeNames(builder, certConfig.sans());
           addAiaAndCrlDistributionPoints(builder, caName);
 
@@ -160,6 +156,37 @@ public class CertificateProfileIssuer {
               new PolicyInformation(OID_POLICY_WRPAC, new DERSequence(cps));
           builder.addExtension(
               Extension.certificatePolicies, false, new CertificatePolicies(policyInfo));
+        });
+  }
+
+  public X509Certificate issueRelyingPartyRegistrationCertificate(
+      CertificateConfig certConfig,
+      String commonName,
+      PublicKey subjectPublicKey,
+      CertificateAuthority signingCa) {
+    if (certConfig.organizationIdentifier() == null
+        || certConfig.organizationIdentifier().isBlank()) {
+      throw new PkiCryptoException(
+          ("Certificate '%s' of type 'relying-party-registration' requires a non-blank"
+              + " 'organizationIdentifier'")
+              .formatted(certConfig.id()));
+    }
+
+    X500Name subject =
+        buildSubjectDn(commonName, certConfig.country(), certConfig.organizationIdentifier());
+    String caName = signingCa.id();
+
+    return issueCertificateInternal(
+        subject,
+        subjectPublicKey,
+        signingCa,
+        DEFAULT_CERT_VALIDITY,
+        builder -> {
+          builder.addExtension(
+              Extension.keyUsage, true,
+              new KeyUsage(KeyUsage.digitalSignature));
+          addSubjectAlternativeNames(builder, certConfig.sans());
+          addAiaAndCrlDistributionPoints(builder, caName);
         });
   }
 
