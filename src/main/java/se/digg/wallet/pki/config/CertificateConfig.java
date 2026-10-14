@@ -19,7 +19,8 @@ public record CertificateConfig(
     List<String> sans,
     String tradeName,
     String country,
-    String organizationIdentifier) {
+    String organizationIdentifier,
+    String alias) {
 
   /**
    * Compact constructor enforcing model invariants and providing defaults.
@@ -47,5 +48,36 @@ public record CertificateConfig(
     if (country == null || country.isBlank()) {
       country = "SE";
     }
+    if (alias == null || alias.isBlank()) {
+      alias = id.replace('-', '_');
+    }
+  }
+
+  /**
+   * Convenience constructor without explicit alias for backward compatibility.
+   */
+  public CertificateConfig(
+      String id,
+      String type,
+      String ca,
+      String keystore,
+      String passwordEnv,
+      String passwordFile,
+      List<String> sans,
+      String tradeName,
+      String country,
+      String organizationIdentifier) {
+    this(
+        id,
+        type,
+        ca,
+        keystore,
+        passwordEnv,
+        passwordFile,
+        sans,
+        tradeName,
+        country,
+        organizationIdentifier,
+        null);
   }
 }

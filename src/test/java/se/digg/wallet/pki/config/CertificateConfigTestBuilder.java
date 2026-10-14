@@ -22,6 +22,7 @@ public class CertificateConfigTestBuilder {
   private String tradeName;
   private String country = "SE";
   private String organizationIdentifier;
+  private String alias;
 
   /**
    * Creates a new generic certificate builder.
@@ -133,6 +134,11 @@ public class CertificateConfigTestBuilder {
     return this;
   }
 
+  public CertificateConfigTestBuilder alias(String alias) {
+    this.alias = alias;
+    return this;
+  }
+
   /**
    * Constructs the immutable {@link CertificateConfig} instance.
    *
@@ -149,6 +155,7 @@ public class CertificateConfigTestBuilder {
         sans,
         tradeName,
         country,
-        organizationIdentifier);
+        organizationIdentifier,
+        alias);
   }
 }

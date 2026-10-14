@@ -46,6 +46,10 @@ public class LoteGenerator {
       "http://uri.etsi.org/19602/SvcType/WalletSolution/Issuance";
   public static final String SVC_TYPE_PID_ISSUANCE =
       "http://uri.etsi.org/19602/SvcType/PID/Issuance";
+  public static final String SVC_TYPE_WRPAC_ISSUANCE =
+      "http://uri.etsi.org/19602/SvcType/WRPAC/Issuance";
+  public static final String SVC_TYPE_WRPRC_ISSUANCE =
+      "http://uri.etsi.org/19602/SvcType/WRPRC/Issuance";
   public static final String SVC_STATUS_GRANTED =
       "http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted";
 
@@ -301,6 +305,14 @@ public class LoteGenerator {
 
     if (cn != null) {
       String lower = cn.toLowerCase(Locale.ROOT);
+      if (lower.contains("wrpac") || lower.contains("verifier access")
+          || lower.contains("verifier-access")) {
+        return SVC_TYPE_WRPAC_ISSUANCE;
+      }
+      if (lower.contains("wrprc") || lower.contains("verifier registration")
+          || lower.contains("verifier-registration")) {
+        return SVC_TYPE_WRPRC_ISSUANCE;
+      }
       if (lower.contains("pid")) {
         return SVC_TYPE_PID_ISSUANCE;
       }
