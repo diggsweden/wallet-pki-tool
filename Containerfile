@@ -7,10 +7,6 @@ FROM docker.io/library/eclipse-temurin:25-jdk-alpine@sha256:7ace075f29555df66967
 LABEL maintainer="Digg - Agency for Digital Government"
 LABEL description="Build stage for Wallet PKI Tool"
 
-# Install curl for Maven Wrapper to reliably download dependencies
-# hadolint ignore=DL3018
-RUN apk add --no-cache curl
-
 # Create app directory
 WORKDIR /app
 

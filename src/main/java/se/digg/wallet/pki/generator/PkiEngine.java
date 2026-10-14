@@ -58,85 +58,23 @@ public class PkiEngine {
 
   /** Default constructor initializing all internal crypto components. */
   public PkiEngine() {
+    this(new SecretResolver());
+  }
+
+  /** Creates a PkiEngine with a custom secret resolver. */
+  public PkiEngine(SecretResolver secretResolver) {
     this(
         new EcKeyGenerator(),
         new CertificateAuthorityManager(),
         new CertificateProfileIssuer(),
         new KeystoreManager(),
-        new SecretResolver(),
-        new LoteGenerator(),
-        new StatusListGenerator(),
-        new TrustListSigner());
-  }
-
-  /**
-   * Constructor with partial dependencies for backwards compatibility in tests.
-   *
-   * @param keyGenerator EC key generator
-   * @param caManager CA manager
-   * @param issuer certificate profile issuer
-   * @param keystoreManager keystore manager
-   * @param secretResolver secret resolver
-   */
-  public PkiEngine(
-      EcKeyGenerator keyGenerator,
-      CertificateAuthorityManager caManager,
-      CertificateProfileIssuer issuer,
-      KeystoreManager keystoreManager,
-      SecretResolver secretResolver) {
-    this(
-        keyGenerator,
-        caManager,
-        issuer,
-        keystoreManager,
         secretResolver,
         new LoteGenerator(),
         new StatusListGenerator(),
         new TrustListSigner());
   }
 
-  /**
-   * Constructor with explicit dependencies for backwards compatibility in tests.
-   *
-   * @param keyGenerator EC key generator
-   * @param caManager CA manager
-   * @param issuer certificate profile issuer
-   * @param keystoreManager keystore manager
-   * @param secretResolver secret resolver
-   * @param loteGenerator LoTE generator
-   * @param statusListGenerator Status list generator
-   */
-  public PkiEngine(
-      EcKeyGenerator keyGenerator,
-      CertificateAuthorityManager caManager,
-      CertificateProfileIssuer issuer,
-      KeystoreManager keystoreManager,
-      SecretResolver secretResolver,
-      LoteGenerator loteGenerator,
-      StatusListGenerator statusListGenerator) {
-    this(
-        keyGenerator,
-        caManager,
-        issuer,
-        keystoreManager,
-        secretResolver,
-        loteGenerator,
-        statusListGenerator,
-        new TrustListSigner());
-  }
-
-  /**
-   * Full constructor with explicit dependencies (useful for testing).
-   *
-   * @param keyGenerator EC key generator
-   * @param caManager CA manager
-   * @param issuer certificate profile issuer
-   * @param keystoreManager keystore manager
-   * @param secretResolver secret resolver
-   * @param loteGenerator LoTE generator
-   * @param statusListGenerator Status list generator
-   * @param trustListSigner Trust list signer
-   */
+  /** Creates a PkiEngine with explicit dependencies. */
   public PkiEngine(
       EcKeyGenerator keyGenerator,
       CertificateAuthorityManager caManager,
@@ -194,6 +132,27 @@ public class PkiEngine {
       }
     }
 
+    // Mirror CA certs and CRLs to ../trust-source if that directory exists
+    Path trustSourceDir = baseOutputDir.resolve("../trust-source");
+    if (Files.isDirectory(trustSourceDir)) {
+      for (CertificateAuthority ca : caMap.values()) {
+        try {
+          Path caSubdir = trustSourceDir.resolve(ca.id());
+          Files.createDirectories(caSubdir);
+          keyGenerator.writePemFile(ca.certificate(), caSubdir.resolve("ca.pem"));
+          if (ca.crl() != null) {
+            keyGenerator.writePemFile(ca.crl(), caSubdir.resolve("revocation-list.pem"));
+          }
+          if (("trust-source".equals(ca.id()) || "trust-source-ca".equals(ca.id()))
+              && ca.crl() != null) {
+            keyGenerator.writePemFile(ca.crl(), trustSourceDir.resolve("revocation-list.pem"));
+          }
+        } catch (IOException e) {
+          log.warn("Could not mirror CA '{}' to trust-source", ca.id(), e);
+        }
+      }
+    }
+
     // 2. Generate certificates and keystores
     Map<String, X509Certificate> issuedCerts = new HashMap<>();
 
@@ -221,18 +180,11 @@ public class PkiEngine {
           issuer.issueCertificate(certConfig, serviceKey.getPublic(), signingCa);
       issuedCerts.put(certConfig.id(), serviceCert);
 
-      if (certDir != null) {
-        keyGenerator.writePrivateKeyPem(
-            serviceKey.getPrivate(), certDir.resolve("%s.key".formatted(certConfig.id())));
-        keyGenerator.writePemFile(
-            serviceCert, certDir.resolve("%s.crt".formatted(certConfig.id())));
-      }
-
       try {
         // Handle multi-key merged store for PID Issuer vs standard single-key store
         if (CertificateProfileType.PID_ISSUER_SERVICE.matches(certConfig.type())) {
           generatePidIssuerKeystore(
-              certConfig, serviceKey, serviceCert, signingCa, certDir, p12Path, password,
+              certConfig, serviceKey, serviceCert, signingCa, p12Path, password,
               baseOutputDir);
         } else {
           String alias =
@@ -243,6 +195,11 @@ public class PkiEngine {
               keystoreManager.createSingleKeyStore(
                   alias, serviceKey.getPrivate(), serviceCert, signingCa.certificate(), password);
           keystoreManager.saveKeyStore(keyStore, p12Path, password);
+
+          if (CertificateProfileType.RELYING_PARTY_REGISTRATION.matches(certConfig.type())
+              && certDir != null) {
+            generateRegistrationCertificateJwt(serviceKey, serviceCert, signingCa, certDir);
+          }
         }
       } finally {
         // Zero out password array from memory immediately after keystore creation
@@ -263,7 +220,9 @@ public class PkiEngine {
             || targets.contains("pid-issuer")
             || targets.contains("verifier-access-certificate");
 
-    if (shouldUpdateTrustStore && caMap.containsKey("pid-issuer-ca")) {
+    CertificateAuthority pidCa =
+        caMap.get("pid-issuer-ca") != null ? caMap.get("pid-issuer-ca") : caMap.get("pid-issuer");
+    if (shouldUpdateTrustStore && pidCa != null) {
       X509Certificate pidIssuerCert =
           findCertificate("pid-issuer", issuedCerts, caMap, config, baseOutputDir);
       CertificateConfig verifierConfig =
@@ -291,7 +250,7 @@ public class PkiEngine {
           try {
             generateTrustStore(
                 pidIssuerCert,
-                caMap.get("pid-issuer-ca").certificate(),
+                pidCa.certificate(),
                 baseOutputDir,
                 truststorePassword,
                 logger);
@@ -422,11 +381,11 @@ public class PkiEngine {
       Map<String, CertificateAuthority> caMap,
       PkiConfiguration config,
       Path baseOutputDir) {
-    if (issuedCerts != null && issuedCerts.containsKey(id)) {
-      return issuedCerts.get(id);
-    }
     if (caMap != null && caMap.containsKey(id)) {
       return caMap.get(id).certificate();
+    }
+    if (issuedCerts != null && issuedCerts.containsKey(id)) {
+      return issuedCerts.get(id);
     }
     if (config.certificates() != null) {
       CertificateConfig certConfig =
@@ -470,7 +429,6 @@ public class PkiEngine {
       KeyPair serviceKey,
       X509Certificate serviceCert,
       CertificateAuthority signingCa,
-      Path certDir,
       Path p12Path,
       char[] password,
       Path baseOutputDir) {
@@ -494,15 +452,6 @@ public class PkiEngine {
             requestKey.getPublic(),
             signingCa);
 
-    if (certDir != null) {
-      keyGenerator.writePrivateKeyPem(
-          nonceKey.getPrivate(), certDir.resolve("nonce-encryption.key"));
-      keyGenerator.writePemFile(nonceCert, certDir.resolve("nonce-encryption.crt"));
-      keyGenerator.writePrivateKeyPem(
-          requestKey.getPrivate(), certDir.resolve("request-encryption.key"));
-      keyGenerator.writePemFile(requestCert, certDir.resolve("request-encryption.crt"));
-    }
-
     // Build merged PKCS#12 keystore
     KeyStore keyStore = keystoreManager.createPkcs12KeyStore();
     keystoreManager.addKeyEntry(
@@ -525,29 +474,33 @@ public class PkiEngine {
         new Certificate[] {requestCert, signingCa.certificate()});
 
     keystoreManager.saveKeyStore(keyStore, p12Path, password);
+    generatePidIssuerRegistrationJwt(serviceKey, serviceCert, baseOutputDir);
+  }
 
-    // Generate issuer_wrprc.jwt if the parent ecosystem pid-issuer directory exists
+  private void generatePidIssuerRegistrationJwt(
+      KeyPair serviceKey, X509Certificate serviceCert, Path baseOutputDir) {
     Path pidIssuerDir = baseOutputDir.resolve("../pid-issuer");
-    if (Files.isDirectory(pidIssuerDir)) {
-      try {
-        String payloadJson = "{\"iss\":\"did:web:localhost\",\"sub\":\"did:web:localhost\"}";
-        String signedJwt =
-            trustListSigner.signJws(payloadJson, serviceKey.getPrivate(), serviceCert,
-                "rc-wrp+jwt");
-        Files.writeString(
-            pidIssuerDir.resolve("issuer_wrprc.jwt"), signedJwt, StandardCharsets.UTF_8);
-        String certB64 = java.util.Base64.getEncoder().encodeToString(serviceCert.getEncoded());
-        String preJwt =
-            "{\n  \"headers\": {\"typ\":\"rc-wrp+jwt\",\"alg\":\"ES256\",\"x5c\":[\""
-                + certB64
-                + "\"]},\n  \"payload\": "
-                + payloadJson
-                + "\n}";
-        Files.writeString(
-            pidIssuerDir.resolve("issuer_wrprc.json"), preJwt, StandardCharsets.UTF_8);
-      } catch (Exception e) {
-        log.warn("Could not write issuer_wrprc.jwt to {}", pidIssuerDir, e);
-      }
+    if (!Files.isDirectory(pidIssuerDir)) {
+      return;
+    }
+    try {
+      String payloadJson = "{\"iss\":\"did:web:localhost\",\"sub\":\"did:web:localhost\"}";
+      String signedJwt =
+          trustListSigner.signJws(payloadJson, serviceKey.getPrivate(), serviceCert, "rc-wrp+jwt");
+      Files.writeString(
+          pidIssuerDir.resolve("issuer_wrprc.jwt"), signedJwt, StandardCharsets.UTF_8);
+      String certB64 = java.util.Base64.getEncoder().encodeToString(serviceCert.getEncoded());
+      String preJwt =
+          """
+              {
+                "headers": {"typ":"rc-wrp+jwt","alg":"ES256","x5c":["${certB64}"]},
+                "payload": ${payloadJson}
+              }"""
+              .replace("${certB64}", certB64)
+              .replace("${payloadJson}", payloadJson);
+      Files.writeString(pidIssuerDir.resolve("issuer_wrprc.json"), preJwt, StandardCharsets.UTF_8);
+    } catch (Exception e) {
+      log.warn("Could not write PID issuer registration tokens to {}", pidIssuerDir, e);
     }
   }
 
@@ -564,17 +517,110 @@ public class PkiEngine {
     Path trustStorePath = baseOutputDir.resolve(TRUSTSTORE_FILENAME);
     keystoreManager.saveKeyStore(trustStore, trustStorePath, password);
 
-    Path verifierTrustStorePath =
-        baseOutputDir.resolve("verifier-access-certificate").resolve(TRUSTSTORE_FILENAME);
-    keystoreManager.saveKeyStore(trustStore, verifierTrustStorePath, password);
-
-    Path trustValidatorPath =
-        baseOutputDir.resolve("trust-validator").resolve(TRUSTSTORE_FILENAME);
-    keystoreManager.saveKeyStore(trustStore, trustValidatorPath, password);
-
     log.info("Truststore '{}' generated", TRUSTSTORE_FILENAME);
     if (logger != null) {
       logger.println("  ✓ Truststore '%s' generated".formatted(TRUSTSTORE_FILENAME));
+    }
+  }
+
+  /**
+   * Generates local relying party registration certificate (WRPRC) JWT for the verifier backend.
+   */
+  private void generateRegistrationCertificateJwt(
+      KeyPair keyPair,
+      X509Certificate cert,
+      CertificateAuthority signingCa,
+      Path certDir) {
+    long now = java.time.Instant.now().getEpochSecond();
+    long exp = now + 31536000L;
+    String payload =
+        """
+            {
+              "name": "DIGG Wallet Ecosystem",
+              "sub": "VATSE-12345678",
+              "country": "SE",
+              "iat": ${iat},
+              "exp": ${exp},
+              "registry_uri": "https://localhost/local-registration-certificate/registry",
+              "srv_description": [
+                {
+                  "lang": "sv",
+                  "value": "Lokal wallet-ekosystemtjänst"
+                },
+                {
+                  "lang": "en",
+                  "value": "Local wallet ecosystem service"
+                }
+              ],
+              "entitlements": [
+                "https://uri.etsi.org/19475/Entitlement/Service_Provider"
+              ],
+              "purpose": [
+                {
+                  "lang": "sv",
+                  "value": "Identifiering med intyg"
+                },
+                {
+                  "lang": "en",
+                  "value": "Identification with credentials"
+                }
+              ],
+              "credentials": [
+                {
+                  "format": "dc+sd-jwt",
+                  "meta": {
+                    "vct_values": ["urn:eudi:pid:1"]
+                  },
+                  "claim": [
+                    {"path": ["personal_administrative_number"]},
+                    {"path": ["family_name"]},
+                    {"path": ["given_name"]},
+                    {"path": ["birthdate"]},
+                    {"path": ["address", "street_address"]},
+                    {"path": ["address", "postal_code"]},
+                    {"path": ["address", "locality"]},
+                    {"path": ["address", "country"]}
+                  ]
+                }
+              ],
+              "service_identifier": "wallet-ecosystem",
+              "intended_use_id": "1",
+              "privacy_policy": "https://localhost/local-registration-certificate/privacy",
+              "info_uri": "https://localhost/local-registration-certificate/info",
+              "support_uri": "https://localhost/local-registration-certificate/support",
+              "supervisory_authority": {
+                "name": "Local Wallet Ecosystem",
+                "country": "SE",
+                "email": "walletecosystem@example.com"
+              },
+              "policy_id": ["0.4.0.19475.3.1"],
+              "certificate_policy": "https://localhost/local-registration-certificate/certificate-policy",
+              "status": {
+                "status_list": {
+                  "uri": "https://localhost/local-registration-certificate/registration-certificate-status",
+                  "idx": 0
+                }
+              }
+            }
+            """
+            .replace("${iat}", String.valueOf(now))
+            .replace("${exp}", String.valueOf(exp));
+
+    try {
+      String signedJwt =
+          trustListSigner.signJws(
+              payload,
+              keyPair.getPrivate(),
+              List.of(cert, signingCa.certificate()),
+              "rc-wrp+jwt");
+      Files.writeString(
+          certDir.resolve("registration_certificate.jwt"), signedJwt, StandardCharsets.UTF_8);
+      Files.writeString(
+          certDir.resolve("registration_certificate.env"),
+          "VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + signedJwt + "\n",
+          StandardCharsets.UTF_8);
+    } catch (Exception e) {
+      log.warn("Could not write registration_certificate tokens to {}", certDir, e);
     }
   }
 }

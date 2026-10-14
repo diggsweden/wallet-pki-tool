@@ -19,10 +19,6 @@ import se.digg.wallet.pki.config.CertificateConfig;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
-import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
-import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
-import se.digg.wallet.pki.crypto.EcKeyGenerator;
-import se.digg.wallet.pki.crypto.KeystoreManager;
 import se.digg.wallet.pki.generator.PkiEngine;
 
 /** Subcommand for generating PKI certificates, keystores, and trust lists. */
@@ -58,31 +54,12 @@ public class GenerateCommand implements Callable<Integer> {
     this(new ConfigurationLoader(), new SecretResolver());
   }
 
-  /**
-   * Constructor with explicit dependencies (useful for testing).
-   *
-   * @param configLoader the configuration loader
-   * @param secretResolver the secret resolver
-   */
+  /** Creates a GenerateCommand with explicit config loader and secret resolver. */
   public GenerateCommand(ConfigurationLoader configLoader, SecretResolver secretResolver) {
-    this(
-        configLoader,
-        secretResolver,
-        new PkiEngine(
-            new EcKeyGenerator(),
-            new CertificateAuthorityManager(),
-            new CertificateProfileIssuer(),
-            new KeystoreManager(),
-            secretResolver));
+    this(configLoader, secretResolver, new PkiEngine(secretResolver));
   }
 
-  /**
-   * Full constructor with explicit dependencies.
-   *
-   * @param configLoader the configuration loader
-   * @param secretResolver the secret resolver
-   * @param pkiEngine the PKI generator engine
-   */
+  /** Creates a GenerateCommand with explicit dependencies. */
   public GenerateCommand(
       ConfigurationLoader configLoader, SecretResolver secretResolver, PkiEngine pkiEngine) {
     this.configLoader = configLoader;

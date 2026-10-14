@@ -52,32 +52,4 @@ public record CertificateConfig(
       alias = id.replace('-', '_');
     }
   }
-
-  /**
-   * Convenience constructor without explicit alias for backward compatibility.
-   */
-  public CertificateConfig(
-      String id,
-      String type,
-      String ca,
-      String keystore,
-      String passwordEnv,
-      String passwordFile,
-      List<String> sans,
-      String tradeName,
-      String country,
-      String organizationIdentifier) {
-    this(
-        id,
-        type,
-        ca,
-        keystore,
-        passwordEnv,
-        passwordFile,
-        sans,
-        tradeName,
-        country,
-        organizationIdentifier,
-        null);
-  }
 }

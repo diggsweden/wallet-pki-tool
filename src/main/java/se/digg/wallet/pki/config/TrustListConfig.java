@@ -44,9 +44,7 @@ public record TrustListConfig(
     entities = entities != null ? List.copyOf(entities) : List.of();
   }
 
-  /**
-   * Convenience constructor for backward compatibility with 4 parameters.
-   */
+  /** Convenience constructor with default optional fields. */
   public TrustListConfig(String id, String type, String signerAuthority, String outputFile) {
     this(id, type, signerAuthority, outputFile, null, List.of());
   }
