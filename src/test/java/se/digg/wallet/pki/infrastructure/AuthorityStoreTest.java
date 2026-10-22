@@ -70,8 +70,9 @@ class AuthorityStoreTest {
     Path key = directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
         .resolve("ca_private_key.pem");
     byte[] keyBefore = Files.readAllBytes(key);
-    Files.delete(directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
-        .resolve("ca.pem"));
+    Files
+        .delete(directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+            .resolve("ca.pem"));
     assertThatThrownBy(() -> store.initialize(AuthorityRole.PID_ISSUER))
         .hasMessageContaining("incomplete roots must be repaired");
     assertThat(Files.readAllBytes(key)).isEqualTo(keyBefore);
@@ -121,8 +122,9 @@ class AuthorityStoreTest {
     var config = EcosystemFixture.configuration(directory);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
-    Files.delete(directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
-        .resolve("revocation-list.pem"));
+    Files
+        .delete(directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+            .resolve("revocation-list.pem"));
     assertThatThrownBy(() -> store.initialize(AuthorityRole.PID_ISSUER))
         .hasMessageContaining("revocation-list.pem");
   }

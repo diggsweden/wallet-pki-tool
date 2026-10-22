@@ -35,12 +35,14 @@ class RegistrationDocumentsTest {
     var credentials = new ArrayList<>(List.of(credential));
     var description = new ArrayList<>(List.of(new LocalizedText("en", "Identity service")));
     var purpose = new ArrayList<>(List.of(new LocalizedText("en", "Identification")));
-    var entitlements = new ArrayList<>(List.of("https://uri.etsi.org/19475/Entitlement/Service_Provider"));
+    var entitlements =
+        new ArrayList<>(List.of("https://uri.etsi.org/19475/Entitlement/Service_Provider"));
     var policies = new ArrayList<>(List.of("0.4.0.19475.3.1"));
     var payload = new VerifierPayload("Service", "VATSE-12345678", "SE", 1, 2,
         "https://example.test/registry", description, entitlements, purpose, credentials,
         "wallet-ecosystem", "1", "https://example.test/privacy", "https://example.test/info",
-        "https://example.test/support", new SupervisoryAuthority("Authority", "SE", "help@example.test"),
+        "https://example.test/support",
+        new SupervisoryAuthority("Authority", "SE", "help@example.test"),
         policies, "https://example.test/policy",
         new Status(new StatusList("https://example.test/status", 0)));
     var json = JsonMapper.builder().build();
@@ -72,7 +74,8 @@ class RegistrationDocumentsTest {
   void pid_document_header_entries_are_snapshots() {
     Map<String, Object> headers = new HashMap<>();
     headers.put("alg", "ES256");
-    var document = new PidDocument(headers, new PidPayload("did:web:example.test", "did:web:example.test"));
+    var document =
+        new PidDocument(headers, new PidPayload("did:web:example.test", "did:web:example.test"));
 
     headers.put("alg", "changed");
 

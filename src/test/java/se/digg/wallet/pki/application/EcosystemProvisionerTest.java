@@ -56,13 +56,18 @@ class EcosystemProvisionerTest {
       assertThat(pid.getKey(alias, "test-password".toCharArray())).isNotNull();
     }
     assertThat(java.util.Collections
-        .list(load(directory.resolve("config/certificates/wallet-provider/wallet_provider.p12")).aliases()))
+        .list(load(directory.resolve("config/certificates/wallet-provider/wallet_provider.p12"))
+            .aliases()))
         .containsExactly("wallet_provider");
     assertThat(java.util.Collections
-        .list(load(directory.resolve("config/certificates/verifier-access-certificate/verifier-access-certificate.p12")).aliases()))
+        .list(load(directory.resolve(
+            "config/certificates/verifier-access-certificate/verifier-access-certificate.p12"))
+            .aliases()))
         .containsExactly("verifier_access_certificate");
     assertThat(java.util.Collections.list(
-        load(directory.resolve("config/certificates/verifier-registration-certificate/verifier-registration-certificate.p12")).aliases()))
+        load(directory.resolve(
+            "config/certificates/verifier-registration-certificate/verifier-registration-certificate.p12"))
+            .aliases()))
         .containsExactly("registration");
     var trust = load(directory.resolve("config/certificates/trust-list-signer/trust_source.p12"));
     assertThat(java.util.Collections.list(trust.aliases())).containsExactly("trust_source");
@@ -90,11 +95,13 @@ class EcosystemProvisionerTest {
         Files.isRegularFile(directory.resolve("config/pid-issuer/issuer_wrprc.json")))
         .isTrue();
     var registration = JWSObject.parse(Files.readString(
-        directory.resolve("config/certificates/verifier-registration-certificate/registration_certificate.jwt")));
+        directory.resolve(
+            "config/certificates/verifier-registration-certificate/registration_certificate.jwt")));
     assertThat(registration.getHeader().getType().toString()).isEqualTo("rc-wrp+jwt");
     assertThat(registration.getHeader().getX509CertChain()).hasSize(2);
     assertThat(new TrustListSigner().verifyJws(registration.serialize(),
-        load(directory.resolve("config/certificates/verifier-registration-certificate/verifier-registration-certificate.p12"))
+        load(directory.resolve(
+            "config/certificates/verifier-registration-certificate/verifier-registration-certificate.p12"))
             .getCertificate("registration").getPublicKey()))
         .isTrue();
     var payload = JsonMapper.builder().build().readTree(registration.getPayload().toString());
@@ -103,7 +110,8 @@ class EcosystemProvisionerTest {
         payload.path("credentials").get(0).path("claim").get(4).path("path").get(1).asString())
         .isEqualTo("street_address");
     assertThat(Files.readString(
-        directory.resolve("config/certificates/verifier-registration-certificate/registration_certificate.env")))
+        directory.resolve(
+            "config/certificates/verifier-registration-certificate/registration_certificate.env")))
         .isEqualTo(
             "VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + registration.serialize() + "\n");
     for (var role : AuthorityRole.values()) {
@@ -136,7 +144,8 @@ class EcosystemProvisionerTest {
     byte[] pidBefore =
         Files.readAllBytes(directory.resolve("config/certificates/issuer/pid_issuer.p12"));
     byte[] walletBefore =
-        Files.readAllBytes(directory.resolve("config/certificates/wallet-provider/wallet_provider.p12"));
+        Files.readAllBytes(
+            directory.resolve("config/certificates/wallet-provider/wallet_provider.p12"));
     byte[] loteBefore =
         Files.readAllBytes(directory.resolve("config/trust-source/signed/trusted-entities.json"));
     var selected = new EcosystemProvisioner(new SecretResolver(
@@ -144,7 +153,8 @@ class EcosystemProvisionerTest {
     selected.generate(config, List.of("pid-issuer"), EcosystemFixture.quiet());
     assertThat(Files.readAllBytes(directory.resolve("config/certificates/issuer/pid_issuer.p12")))
         .isNotEqualTo(pidBefore);
-    assertThat(Files.readAllBytes(directory.resolve("config/certificates/wallet-provider/wallet_provider.p12")))
+    assertThat(Files
+        .readAllBytes(directory.resolve("config/certificates/wallet-provider/wallet_provider.p12")))
         .isEqualTo(walletBefore);
     assertThat(
         Files.readAllBytes(directory.resolve("config/trust-source/signed/trusted-entities.json")))
@@ -263,8 +273,11 @@ class EcosystemProvisionerTest {
     for (String artifact : artifacts) {
       yaml = yaml.replace(": " + artifact + "\n", ": relocated/" + artifact + "\n");
     }
-    yaml = yaml.replace("publicationDirectory: trust-source", "publicationDirectory: relocated/trust-source")
-        .replace("rootCrlFile: trust-source/revocation-list.pem", "rootCrlFile: relocated/trust-source/revocation-list.pem");
+    yaml = yaml
+        .replace("publicationDirectory: trust-source",
+            "publicationDirectory: relocated/trust-source")
+        .replace("rootCrlFile: trust-source/revocation-list.pem",
+            "rootCrlFile: relocated/trust-source/revocation-list.pem");
     Path file = directory.resolve("relocated.yaml");
     Files.writeString(file, yaml);
     var config = new ConfigurationLoader().load(file);
@@ -277,9 +290,11 @@ class EcosystemProvisionerTest {
           .as(artifact).isTrue();
       assertThat(Files.exists(directory.resolve("config").resolve(artifact))).isFalse();
     }
-    assertThat(Files.isRegularFile(directory.resolve("config/relocated/trust-source/pid-issuer/ca.pem")))
+    assertThat(
+        Files.isRegularFile(directory.resolve("config/relocated/trust-source/pid-issuer/ca.pem")))
         .isTrue();
-    assertThat(Files.isRegularFile(directory.resolve("config/relocated/trust-source/revocation-list.pem")))
+    assertThat(
+        Files.isRegularFile(directory.resolve("config/relocated/trust-source/revocation-list.pem")))
         .isTrue();
   }
 
