@@ -1,8 +1,6 @@
 # Wallet PKI Tool
 
-`wallet-pki-tool` plans, maintains, and verifies the certificates, keystores, and signed documents used by a wallet environment. It runs as a Java 25 CLI or a container.
-
-The configuration describes authorities, identities, documents, truststores, and consumer exports separately. The tool preserves valid existing material, resolves dependencies during renewal and rotation, and publishes a verified generation through one atomic `current` pointer.
+`wallet-pki-tool` maintains the fixed certificate hierarchies and signed documents used by the Digg wallet ecosystem and sandbox. Named Java flows own the certificate profiles, aliases, dependencies, and consumer filenames. YAML supplies environment values.
 
 ## Build and run
 
@@ -11,115 +9,95 @@ The configuration describes authorities, identities, documents, truststores, and
 java -jar target/wallet-pki-tool.jar --help
 ```
 
-[examples/local.yaml](examples/local.yaml) provides the local ecosystem configuration. Its keystore passwords come from the environment variables named in the file. A container can receive them through `--env-file`; the CLI does not source shell scripts or `.env` files.
+There are two deployment workflows:
 
-Create and inspect a plan before applying it:
+- `ecosystem` provisions the local development setup. Its configuration contains all five roles, and `ensure` may initialize managed development authorities.
+- `sandbox` provisions the roles declared in its configuration. Authorities must be supplied as existing certificate, private key, and CRL files. A wallet-provider-only configuration needs no PID issuer, verifier, or trust-source settings.
 
-```bash
-java -jar target/wallet-pki-tool.jar plan --config examples/local.yaml --json > plan.json
-java -jar target/wallet-pki-tool.jar apply --plan plan.json
-java -jar target/wallet-pki-tool.jar verify --config examples/local.yaml
-```
-
-Planning reads configuration, certificate metadata, and declared static files. It creates no directories, generates no keys, and resolves no password values. The plan names the required secret references. Applying a saved plan rejects changed configuration, static inputs, or committed generations.
-
-For an operation that plans and applies immediately:
+The examples are [ecosystem.yaml](examples/ecosystem.yaml) and [sandbox.yaml](examples/sandbox.yaml). Set the password environment variables or mount the password files named there. The CLI reads the process environment; a container can receive variables through `--env-file`.
 
 ```bash
-java -jar target/wallet-pki-tool.jar ensure --config examples/local.yaml
-java -jar target/wallet-pki-tool.jar renew --config examples/local.yaml identity:pid-issuer
-java -jar target/wallet-pki-tool.jar rotate --config examples/local.yaml identity:verifier-registration-certificate
+java -jar target/wallet-pki-tool.jar ecosystem ensure --config examples/ecosystem.yaml
+java -jar target/wallet-pki-tool.jar ecosystem verify --config examples/ecosystem.yaml
+java -jar target/wallet-pki-tool.jar sandbox ensure wallet-provider --config examples/sandbox.yaml
+java -jar target/wallet-pki-tool.jar sandbox rotate wallet-provider --config examples/sandbox.yaml
 ```
 
-Use `--json` for machine-readable plans and reports. Passwords and private keys are excluded from those results.
+Use `--json` to report the immutable bundle path, generation, environment, and operations performed for each role.
+
+## Wallet roles
+
+| Role | Owned artifacts |
+| :--- | :--- |
+| `pid-issuer` | PID signing key, nonce-encryption key, request-encryption key, combined keystore, and issuer registration JWT/JSON |
+| `wallet-provider` | Wallet attestation signing identity and keystore |
+| `verifier-access` | Relying-party access identity, keystore, and development/sandbox CPS document |
+| `verifier-registration` | Registration signing identity, keystore, registration JWT, and environment export |
+| `trust-source` | Dedicated signing identity, signer keystore/public certificate, four-role LoTE, and all-valid test status list |
+
+Each role has its own authority. The PID and wallet signing recipes have distinct QC types. The LoTE trusts the four participant CAs, so rotating a participant leaf leaves it unchanged. Rotating the trust-source signer refreshes both trust documents.
+
+Aliases, certificate profile recipes, protocol constants, and output paths live in code. Registration metadata, organization details, SANs, publication URLs, and secret references come from configuration. DNS, IP, and URI SANs have separate fields.
 
 ## Lifecycle
 
 | Operation | Behavior |
 | :--- | :--- |
-| `plan` | Describe `ensure` changes, or select `--operation renew` / `--operation rotate` with explicit identity targets. |
-| `apply --plan FILE` | Apply the inspected JSON plan after checking that its inputs are still current. |
-| `ensure` | Initialize a complete environment, reuse valid material, and renew changed or due artifacts. An unchanged environment reuses its generation. |
-| `renew` | Replace certificates while preserving existing identity keys. Explicit identity targets are required. |
-| `rotate` | Replace all keys belonging to the selected identity, then rebuild dependent documents and truststores. |
-| `verify` | Check the committed generation's digests, certificate/key correspondence, chains, roles, signed payloads, and truststores without writing files. |
+| `ensure` | Initialize missing material, reuse valid material, and renew changed or due certificates while retaining keys. Refresh due documents independently. |
+| `renew ROLE...` | Reissue the selected roles' certificates with their existing keys and rebuild their documents. |
+| `rotate ROLE...` | Replace the selected roles' keys and rebuild their complete artifact sets. |
+| `verify` | Check committed bytes, CA pins/CRLs, certificate chains, keystore aliases and key correspondence, signatures, payloads, and environment exports. |
 
-Targets use qualified references: `authority:ID`, `identity:ID`, `document:ID`, and `truststore:ID`. Initialize the complete environment before selecting individual targets. Changes to unselected configuration must be reconciled with `ensure` first.
+`ensure` and `verify` default to configured roles. Every operation can select roles explicitly. Renewal and rotation require explicit role names. A selected operation reads only its required secrets and leaves previously published unrelated role artifacts unchanged.
 
-Dependencies follow references. Rotating a registration identity rebuilds its registration JWT and exported environment value. A LoTE containing the unchanged issuing CA remains unchanged. Rotating the LoTE signer rebuilds documents signed by that identity.
+Unchanged `ensure` reuses the same generation without keystore passwords. Full `verify` needs the selected roles' passwords to inspect their encrypted stores. Password files are UTF-8; trailing line endings are removed and spaces are preserved. Empty passwords fail.
 
-Authority creation requires explicit `create: true`. Imported authorities require both `keyFile` and `certFile`; missing or mismatched material fails. Existing trust anchors are pinned by certificate fingerprint, including when temporarily removed from configuration. Authority subject changes and replacement trust anchors require a separately coordinated rollover and are rejected by the identity rotation command.
+Leaf certificates have an 825-day lifetime capped by the issuing authority. Certificates and documents renew 30 days before expiry. Configured document lifetimes must cover that window; generated documents are capped by the signer's expiry. LoTE sequence numbers advance automatically when refreshed. Authorities unable to cover the renewal window require a separately coordinated rollover.
 
-## Configuration schema
+Authorities are pinned by certificate fingerprint. Missing managed material, changed managed subjects, mismatched imported keys, expired CRLs, and replacement trust anchors fail. Sandbox CRLs are published with their supplied revocation entries preserved; the CLI does not operate a revocation registry. Imported authority private keys remain at their supplied paths and are never copied into state or consumer bundles.
 
-Schema version 1 is strict: unknown fields, duplicate YAML keys, unsupported profiles, unresolved references, and conflicting export paths are rejected. Relative paths are resolved against the configuration file, independently of the working directory. State and output directories must be separate and non-nested.
+## Configuration
 
-The complete examples are [local.yaml](examples/local.yaml) and [stage.yaml](examples/stage.yaml).
+Schema version `2` uses named sections: `pidIssuer`, `walletProvider`, `verifier.access`, `verifier.registration`, and `trustSource`. Sandbox may omit unrelated sections. Ecosystem requires all five roles.
 
-| Field | Responsibility |
-| :--- | :--- |
-| `schemaVersion` | Required; currently `1`. |
-| `environment` | Environment identifier recorded in plans and manifests. |
-| `stateDir` | Persistent private state, including authority keys and encrypted identity stores. |
-| `outputDir` | Versioned consumer bundles and their `current` pointer. |
-| `authorities` | Authority ID, subject, explicit creation/import policy, and optional certificate/CRL publication URLs. |
-| `identities` | Certificate profile, issuing authority, subject, SANs, alias, password reference, validity, and renewal window. |
-| `documents` | Document type, signing identity, validity, and explicit payload inputs. |
-| `trustStores` | Explicit certificate references, consumer aliases, and password reference. |
-| `exports` | Explicit source, format, destination, and optional environment variable name. |
+Every authority uses either `source: managed` with `commonName`, or `source: existing` with `certificateFile`, `privateKeyFile`, and `crlFile`. Each password reference selects exactly one of `env` and `file`.
 
-An identity supplies exactly one of `passwordEnv` and `passwordFile`. Password files are read as UTF-8 with trailing line endings removed. Empty passwords are rejected. Passwords remain external to YAML and reports. Keystore and truststore aliases use lowercase letters, digits, underscores, and hyphens to match PKCS12 alias handling.
+`publicationBaseUrl` is the trust-source base used by the fixed certificate/CRL publication paths. Set it to the target environment. All filesystem paths are relative to the YAML file. State and output roots must be separate and non-nested. Unknown fields, duplicate YAML keys, malformed SANs, and unsupported roles fail.
 
-Supported identity profiles are `pid-issuer-service`, `wallet-provider-service`, `relying-party-access`, `relying-party-registration`, `trust-source-signer`, `encryption`, and `service`. SANs support DNS names, IP literals, and URIs; explicit `DNS:`, `IP:`, and `URI:` prefixes are available. The PID profile owns its signing, nonce-encryption, and request-encryption keys together. Certificate expiry is capped by the issuing authority's expiry.
+A sandbox trust source may be provisioned independently. Supply the four public CA files through `trustSource.lote.trustedAuthorities.<role>.certificateFile`, alongside each entity's metadata. Those participants' private keys and keystore passwords are unnecessary. When participants are configured together, the LoTE can use their configured authorities directly.
 
-Identity validity defaults to 825 days; document validity defaults to 365 days. `renewBeforeDays` defines the advance renewal window. Public URLs, relying-party metadata, subjects, and claims belong to environment configuration.
+## Publication and consumer contracts
 
-Documents have one of three types:
-
-- `lote`: requires explicit entity references and roles (`pid`, `wallet`, `wrpac`, `wrprc`), scheme name/operator, and territory. Roles are never inferred from certificate names. Its sequence number advances when rebuilt.
-- `registration`: signs configured `claims`; issue and expiry times are calculated by the tool.
-- `status-list`: signs the configured URL and optional compressed `statusBits`. The default is an empty development status list. Configured bits are signed as supplied; this CLI does not maintain a live revocation registry.
-
-Each document's `signer` references an identity, whose certificate chain is embedded in the JWS header. A CA and a document signing identity are distinct resources. Document validity is capped by signer certificate expiry.
-
-## Export bundles
+Each operation builds and verifies an isolated generation before replacing one `current` symlink:
 
 ```text
-outputDir/
+outputDirectory/
   current -> generations/GENERATION
   generations/GENERATION/
     manifest.json
-    public/
-      trust-source/
-      pid-issuer/
-      certificates/
-    private/
-      certificates/
+    private/certificates/
+    public/trust-source/
+    public/pid-issuer/
+    public/certificates/
 ```
 
-Every generation is built in isolated staging directories and verified before publication. The state snapshot is completed before `current` is atomically replaced. Required generation failures preserve the previous current bundle. Concurrent writers are rejected. Filesystems must support symbolic links and atomic renames within each configured root.
+The reported bundle path identifies the immutable generation to deploy. Private files use owner-only permissions on POSIX filesystems. Persistent state holds managed CA keys, public identity certificates, authority pins, and lifecycle metadata. Previously published generations are retained. A failed operation preserves the previous current bundle; concurrent writers fail. Filesystems must support symlinks and atomic renames within each root.
 
-The manifest records the tool/configuration version, generation, environment, creation time, resource fingerprints and expiry times, and file digests. `verify` needs the relevant passwords to inspect the encrypted stores. It also checks public artifact contracts and detects altered files.
-
-| Export format | Source | Destination |
+| Artifact | Path inside the bundle | Alias |
 | :--- | :--- | :--- |
-| `pkcs12` | Identity or truststore | Under `private/` |
-| `certificate` | Authority or identity | Under `public/` |
-| `crl` | Authority | Under `public/` |
-| `compact` | Signed document | Under `public/` |
-| `env` | Signed document; also requires `variable` | Under `public/` |
-| `json` | Decoded document header and payload | Under `public/` |
-| `file` | Explicit `file:PATH` static input | Under `public/` |
+| PID issuer | `private/certificates/issuer/pid_issuer.p12` | `pid_issuer`, `nonce-encryption`, `request-encryption` |
+| Wallet provider | `private/certificates/wallet-provider/wallet_provider.p12` | `wallet_provider` |
+| Verifier access | `private/certificates/verifier-access-certificate/verifier-access-certificate.p12` | `verifier_access_certificate` |
+| Verifier registration | `private/certificates/verifier-registration-certificate/verifier-registration-certificate.p12` | `registration` |
+| Trust signer | `private/certificates/trust-list-signer/trust_source.p12` | `trust_source` |
+| Issuer registration | `public/pid-issuer/issuer_wrprc.jwt` and `.json` | — |
+| Verifier registration | `public/certificates/verifier-registration-certificate/registration_certificate.jwt` and `.env` | — |
+| Trust documents | `public/trust-source/signed/trusted-entities.json`, `status-list.jwt` | — |
+| Public authorities | `public/trust-source/<role>/ca.pem`, `revocation-list.pem` | — |
 
-The legacy `trusted-entities.json` filename contains compact JWS. Use the separate decoded JSON export for `jq` inspection. Exported artifacts and the manifest receive SPDX `.license` companions.
+`trusted-entities.json` contains compact JWS. The verifier environment file defines `VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE`. The signer certificate is also published at `public/certificates/trust-list-signer/trust_source_cert.pem`.
 
-Private exports use owner-only file permissions on POSIX filesystems. Authority private keys remain in `stateDir` and are never exported. Keep persistent state available across CI invocations and retain it separately from deployable bundles. Previous generations are retained; retention and coordinated consumer rollout belong to the deployment pipeline.
-
-## Local ecosystem integration
-
-The local example preserves keystore aliases, registration environment variable names, trust-source paths, and issuer registration files expected by `wallet-ecosystem`.
-
-Use the immutable bundle path printed by `ensure` or `apply`. [examples/compose.override.yaml](examples/compose.override.yaml) maps those outputs into the existing consumers:
+For the local ecosystem, use [compose.override.yaml](examples/compose.override.yaml):
 
 ```bash
 export PKI_BUNDLE=/absolute/path/to/reported/generation
@@ -128,30 +106,21 @@ cd /path/to/wallet-ecosystem
 podman compose -f docker-compose.yaml -f /path/to/wallet-pki-tool/examples/compose.override.yaml up -d --force-recreate
 ```
 
-The Podman override requires Compose support for `!override` and maps the current host user into keystore consumers so they can read owner-only private exports. Recreate consumers after switching generations so file mounts and environment values use the same bundle. The override preserves the ecosystem's static trust-source assets. Traefik's mkcert TLS certificate remains managed by the existing local workflow.
+The Podman override requires Compose support for `!override`. It preserves static trust-source assets and maps the host user so consumers can read owner-only keystores. Recreate consumers when switching generations. Local Traefik/mkcert TLS stays in the ecosystem workflow.
 
-## Sandbox and stage
+Sandbox deployment consumes the same fixed artifact layout. Publish the generated public files through the existing trust-source deployment and deliver keystores through the existing secret-management workflow. Retain private state between runs.
 
-The stage example uses supplied CA key/certificate files and password files under `/run/secrets/wallet-pki/`. Adjust those mount paths and all example URLs/metadata for the target environment. The tool runs without cluster credentials and produces a versioned bundle for the existing deployment pipeline.
+## Migration
 
-Use a stable, private state location and a single state/output pair per environment. Publish `public/` through the trust source and deliver the required `private/` files through the established secret-management workflow. Stage preparation must retain the configured trust anchors rather than bootstrap new ones on each CI run.
+The generic schema version 1 and its `plan`/`apply` commands are replaced by these named workflows. Translate environment values into the role sections in the examples. Profiles, arbitrary references, exports, aliases, and filenames are supplied by the implementation.
 
-## Migrating the Bash or previous Java configuration
-
-1. Inventory the consumer aliases, signing identities, trust anchors, published URLs, registration claims, and mounted filenames.
-2. Translate these into schema version 1. Legacy `certificates`, `trustLists`, and `signerAuthority` configuration is rejected. `generate` remains an alias for `ensure` using the new schema.
-3. Import existing CA key/certificate pairs explicitly to preserve trust anchors. Existing application keystores are not imported automatically; initial identity issuance creates replacement application keys and requires a coordinated consumer rollout.
-4. Declare every JWT, keystore, truststore, certificate/CRL publication, static input, and environment export. Neighboring directories no longer enable implicit output.
-5. Generate into isolated state/output directories, verify the artifacts, and run ecosystem acceptance tests against those outputs before changing consumers.
-
-Certificate profiles encode this project's expected behavior. Profile changes should be checked against the applicable specifications as well as consumer interoperability tests; the migrated scripts are an artifact inventory rather than a conformance oracle.
+Use fresh state/output roots for schema version 2. Import existing CA certificate/key/CRL files explicitly to retain trust anchors. Application keystores are not imported automatically: initial role provisioning creates new application keys and requires a coordinated consumer rollout. Keep the previous deployment until the new bundle passes ecosystem acceptance tests.
 
 ## Development
 
 ```bash
-just install
 just lint-fix
 just verify
 ```
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for the module interfaces and verification strategy.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the module interfaces and tests.

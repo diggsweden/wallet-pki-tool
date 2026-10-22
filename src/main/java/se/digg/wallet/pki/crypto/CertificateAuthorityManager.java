@@ -10,15 +10,16 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.cert.CRLException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509CRL;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPublicKey;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -40,12 +41,13 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
 import org.bouncycastle.cert.jcajce.JcaX509v2CRLBuilder;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import se.digg.wallet.pki.config.AuthorityConfig;
+import se.digg.wallet.pki.domain.Organization;
 
 /**
  * Manages creation, signing, serialization, and deserialization of Root Certificate Authorities
@@ -80,9 +82,9 @@ public class CertificateAuthorityManager {
 
   public CertificateAuthorityManager(EcKeyGenerator keyGenerator, SecureRandom secureRandom,
       Clock clock) {
+    this.clock = Objects.requireNonNull(clock);
     this.keyGenerator = Objects.requireNonNull(keyGenerator, "keyGenerator must not be null");
     this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom must not be null");
-    this.clock = Objects.requireNonNull(clock);
   }
 
   /**
@@ -94,74 +96,16 @@ public class CertificateAuthorityManager {
    * @return the newly created CertificateAuthority
    */
   public CertificateAuthority createAuthority(String id, String commonName) {
-    KeyPair keyPair = keyGenerator.generateKeyPair();
-    X509Certificate certificate =
-        generateRootCertificate(commonName, keyPair, DEFAULT_CA_VALIDITY);
-    X509CRL crl = generateEmptyCrl(certificate, keyPair, DEFAULT_CA_VALIDITY);
-    return new CertificateAuthority(id, keyPair, certificate, crl);
+    return createAuthority(id, commonName, new Organization("DIGG", "SE", "VATSE-12345678"));
   }
 
-  /**
-   * Loads an existing Authority or generates a new one based on the configuration and directory.
-   *
-   * @param config the Authority configuration
-   * @param baseOutputDir base directory for outputs (e.g. ./config/certificates)
-   * @return loaded or generated CertificateAuthority
-   */
-  public CertificateAuthority loadOrCreateAuthority(AuthorityConfig config, Path baseOutputDir) {
-    if (config == null) {
-      throw new PkiCryptoException("AuthorityConfig must not be null");
-    }
-
-    // 1. Check if external keyFile and certFile are configured
-    if (config.keyFile() != null && config.certFile() != null) {
-      Path keyPath = Path.of(config.keyFile());
-      Path certPath = Path.of(config.certFile());
-      PrivateKey privateKey = keyGenerator.readPrivateKeyPem(keyPath);
-      X509Certificate cert = readCertificatePem(certPath);
-      KeyPair keyPair = new KeyPair(cert.getPublicKey(), privateKey);
-      validateAuthority(keyPair, cert);
-      X509CRL crl = generateEmptyCrl(cert, keyPair, DEFAULT_CA_VALIDITY);
-      return new CertificateAuthority(config.id(), keyPair, cert, crl);
-    }
-    if (config.keyFile() != null || config.certFile() != null) {
-      throw new PkiCryptoException(
-          "Both 'keyFile' and 'certFile' must be provided when configuring external CA for"
-              + " authority: %s"
-                  .formatted(config.id()));
-    }
-
-    // 2. Check if CA files already exist in standard output directory: <baseOutputDir>/ca/<id>/
-    Path caDir = baseOutputDir.resolve("ca").resolve(config.id());
-    Path caKeyFile = caDir.resolve(CA_KEY_FILENAME);
-    Path caCertFile = caDir.resolve(CA_CERT_FILENAME);
-    Path crlFile = caDir.resolve(CRL_FILENAME);
-
-    boolean keyExists = Files.exists(caKeyFile);
-    boolean certExists = Files.exists(caCertFile);
-
-    if (keyExists && certExists) {
-      PrivateKey privateKey = keyGenerator.readPrivateKeyPem(caKeyFile);
-      X509Certificate cert = readCertificatePem(caCertFile);
-      KeyPair keyPair = new KeyPair(cert.getPublicKey(), privateKey);
-      validateAuthority(keyPair, cert);
-      X509CRL crl = Files.exists(crlFile) ? readCrlPem(crlFile)
-          : generateEmptyCrl(cert, keyPair, DEFAULT_CA_VALIDITY);
-      return new CertificateAuthority(config.id(), keyPair, cert, crl);
-    }
-
-    // Reject incomplete CA state to avoid silently overwriting surviving trust anchor material
-    if (keyExists || certExists) {
-      throw new PkiCryptoException(
-          ("Incomplete CA files found in %s (key exists: %b, cert exists: %b)."
-              + " Refusing to overwrite existing material without explicit rotation.")
-              .formatted(caDir, keyExists, certExists));
-    }
-
-    // 3. Generate new CA and save to disk
-    CertificateAuthority ca = createAuthority(config.id(), config.commonName());
-    saveAuthority(ca, caDir);
-    return ca;
+  public CertificateAuthority createAuthority(String id, String commonName,
+      Organization organization) {
+    KeyPair keyPair = keyGenerator.generateKeyPair();
+    X509Certificate certificate =
+        generateRootCertificate(commonName, keyPair, DEFAULT_CA_VALIDITY, organization);
+    X509CRL crl = generateEmptyCrl(certificate, keyPair, DEFAULT_CA_VALIDITY);
+    return new CertificateAuthority(id, keyPair, certificate, crl);
   }
 
   /**
@@ -176,18 +120,49 @@ public class CertificateAuthorityManager {
     Objects.requireNonNull(keyPair, "keyPair must not be null");
     Objects.requireNonNull(cert, "cert must not be null");
 
+    validateRootCertificate(cert);
+    validateKeyPair(keyPair, cert);
+  }
+
+  /** Validates the supported root profile without needing access to its private key. */
+  public void validateRootCertificate(X509Certificate certificate) {
     try {
-      cert.checkValidity(Date.from(clock.instant()));
-    } catch (CertificateException e) {
-      throw new PkiCryptoException("CA certificate is not valid: " + e.getMessage(), e);
+      certificate.checkValidity(Date.from(clock.instant()));
+      certificate.verify(certificate.getPublicKey());
+      boolean[] usage = certificate.getKeyUsage();
+      if (!certificate.getIssuerX500Principal().equals(certificate.getSubjectX500Principal())
+          || certificate.getBasicConstraints() < 0 || usage == null || usage.length < 7
+          || !usage[5] || !usage[6]) {
+        throw new PkiCryptoException(
+            "Expected a self-signed root CA with certificate and CRL signing usage");
+      }
+      if (!(certificate.getPublicKey() instanceof ECPublicKey ec)
+          || !ec.getParams().getOrder()
+              .equals(ECNamedCurveTable.getParameterSpec(EcKeyGenerator.DEFAULT_CURVE).getN())) {
+        throw new PkiCryptoException("Wallet authorities require EC P-256 keys");
+      }
+    } catch (GeneralSecurityException e) {
+      throw new PkiCryptoException("Invalid root authority certificate: " + e.getMessage(), e);
     }
+  }
 
-    if (cert.getBasicConstraints() < 0) {
-      throw new PkiCryptoException(
-          "Certificate '%s' is not a valid Certificate Authority (basicConstraints cA is not true)"
-              .formatted(cert.getSubjectX500Principal().getName()));
+  /** Preserves and validates supplied revocation state rather than generating a replacement. */
+  public void validateCrl(X509CRL crl, X509Certificate certificate) {
+    try {
+      crl.verify(certificate.getPublicKey());
+      Date now = Date.from(clock.instant());
+      if (!crl.getIssuerX500Principal().equals(certificate.getSubjectX500Principal())
+          || crl.getNextUpdate() == null || !crl.getNextUpdate().after(now)
+          || crl.getThisUpdate().after(now)) {
+        throw new PkiCryptoException(
+            "Authority CRL is expired, not yet valid or has a different issuer");
+      }
+    } catch (GeneralSecurityException e) {
+      throw new PkiCryptoException("Invalid CRL signature", e);
     }
+  }
 
+  public void validateKeyPair(KeyPair keyPair, X509Certificate cert) {
     try {
       Signature sig =
           Signature.getInstance(SIGNATURE_ALGORITHM, BouncyCastleProvider.PROVIDER_NAME);
@@ -200,12 +175,12 @@ public class CertificateAuthorityManager {
       sig.update(challenge);
       if (!sig.verify(signature)) {
         throw new PkiCryptoException(
-            "Private key does not match the public key in CA certificate '%s'"
+            "Private key does not match the public key in certificate '%s'"
                 .formatted(cert.getSubjectX500Principal().getName()));
       }
     } catch (Exception e) {
       throw new PkiCryptoException(
-          "Failed to validate CA key pair against certificate: " + e.getMessage(), e);
+          "Failed to validate key pair against certificate: " + e.getMessage(), e);
     }
   }
 
@@ -219,12 +194,18 @@ public class CertificateAuthorityManager {
    */
   public X509Certificate generateRootCertificate(
       String commonName, KeyPair keyPair, Duration validity) {
+    return generateRootCertificate(commonName, keyPair, validity,
+        new Organization("DIGG", "SE", "VATSE-12345678"));
+  }
+
+  public X509Certificate generateRootCertificate(String commonName, KeyPair keyPair,
+      Duration validity, Organization organization) {
     try {
       X500Name subjectAndIssuer =
           new X500NameBuilder(BCStyle.INSTANCE)
               .addRDN(BCStyle.CN, commonName)
-              .addRDN(BCStyle.O, "DIGG")
-              .addRDN(BCStyle.C, "SE")
+              .addRDN(BCStyle.O, organization.name())
+              .addRDN(BCStyle.C, organization.country())
               .build();
 
       BigInteger serialNumber =

@@ -19,8 +19,9 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
-import se.digg.wallet.pki.config.EnvironmentConfiguration;
+import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.PkiConfigurationException;
+import se.digg.wallet.pki.domain.WalletRole;
 import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -34,28 +35,35 @@ public final class ArtifactStore {
   private final Path state;
   private final Path output;
   private final String environment;
+  private final String workflow;
 
-  public ArtifactStore(EnvironmentConfiguration configuration) {
-    state = Path.of(configuration.stateDir());
-    output = Path.of(configuration.outputDir());
+  public ArtifactStore(PkiConfiguration configuration, String workflow) {
+    state = Path.of(configuration.stateDirectory());
+    output = Path.of(configuration.outputDirectory());
     environment = configuration.environment();
+    this.workflow = workflow;
     rejectSymlinks(state);
     rejectSymlinks(output);
   }
 
-  public record Resource(String specificationDigest, String expiresAt, String certificateDigest,
-      String primaryAlias) {
+
+  public record RoleState(String configurationDigest, String certificateExpiresAt,
+      String documentsExpireAt) {
   }
 
-  public record Manifest(int schemaVersion, String toolVersion, String environment,
-      String generation, String configurationDigest, String createdAt,
-      Map<String, Resource> resources, Map<String, String> files, Map<String, String> stateFiles) {
+
+  public record Manifest(int schemaVersion, String workflow, String environment,
+      String generation, String createdAt, Map<WalletRole, RoleState> roles,
+      Map<WalletRole, String> authorityPins, Map<String, String> files,
+      Map<String, String> stateFiles) {
     public Manifest {
-      resources = Map.copyOf(resources);
+      roles = Map.copyOf(roles);
+      authorityPins = Map.copyOf(authorityPins);
       files = Map.copyOf(files);
       stateFiles = Map.copyOf(stateFiles);
     }
   }
+
 
   public record Snapshot(Path state, Path bundle, Manifest manifest) {
     public String generation() {
@@ -67,6 +75,18 @@ public final class ArtifactStore {
   public Snapshot current() {
     Path current = output.resolve("current");
     if (!Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+      Path generations = state.resolve("generations");
+      if (Files.isDirectory(generations)) {
+        try (var entries = Files.list(generations)) {
+          if (entries.findAny().isPresent()) {
+            throw new PkiConfigurationException(
+                "Persistent generations exist without a current pointer; "
+                    + "restore the pointer instead of replacing trust anchors");
+          }
+        } catch (IOException e) {
+          throw new PkiConfigurationException("Cannot inspect persistent generations", e);
+        }
+      }
       return null;
     }
     try {
@@ -89,7 +109,8 @@ public final class ArtifactStore {
         throw new PkiConfigurationException("State and bundle manifests disagree");
       }
       Manifest manifest = JSON.readValue(manifestBytes, Manifest.class);
-      if (manifest.schemaVersion() != 1 || !manifest.environment().equals(environment)
+      if (manifest.schemaVersion() != 2 || !workflow.equals(manifest.workflow())
+          || !environment.equals(manifest.environment())
           || !manifest.generation().equals(target.getFileName().toString())) {
         throw new PkiConfigurationException("Committed state belongs to another environment");
       }
@@ -114,6 +135,7 @@ public final class ArtifactStore {
       throw e;
     }
   }
+
 
   public record Lock(FileChannel channel, FileLock lock) implements AutoCloseable {
     @Override
@@ -143,17 +165,8 @@ public final class ArtifactStore {
         directory(privateState, true);
         directory(bundle, true);
         if (previous != null) {
-          try (var paths = Files.walk(previous.state())) {
-            for (Path path : paths.toList()) {
-              rejectSymlinks(path);
-              Path destination = privateState.resolve(previous.state().relativize(path));
-              if (Files.isDirectory(path)) {
-                directory(destination, true);
-              } else {
-                Files.copy(path, destination);
-              }
-            }
-          }
+          copyTree(previous.state(), privateState);
+          copyTree(previous.bundle(), bundle);
         }
       } catch (IOException | RuntimeException e) {
         close();
@@ -203,14 +216,42 @@ public final class ArtifactStore {
     }
   }
 
-  public static Path resource(Path root, String reference, String extension) {
-    String[] parts = reference.split(":", -1);
-    if (parts.length != 2 || !parts[1].matches("[a-z][a-z0-9-]*")
-        || !java.util.Set.of("authority", "identity", "document", "truststore")
-            .contains(parts[0])) {
-      throw new PkiConfigurationException("Invalid resource reference: " + reference);
+  public static Map<String, String> hashes(Path root) throws IOException {
+    Map<String, String> hashes = new java.util.TreeMap<>();
+    try (var paths = Files.walk(root)) {
+      for (Path path : paths.sorted().toList()) {
+        rejectSymlinks(path);
+        if (Files.isRegularFile(path) && !path.equals(root.resolve("manifest.json"))) {
+          hashes.put(root.relativize(path).toString(), digest(Files.readAllBytes(path)));
+        }
+      }
     }
-    return root.resolve(parts[0] + "/" + parts[1] + extension);
+    return hashes;
+  }
+
+  public static void verify(Snapshot snapshot) throws IOException {
+    if (!hashes(snapshot.state()).equals(snapshot.manifest().stateFiles())
+        || !hashes(snapshot.bundle()).equals(snapshot.manifest().files())) {
+      throw new PkiConfigurationException("Artifact digest mismatch or unmanifested file");
+    }
+  }
+
+  private static void copyTree(Path source, Path target) throws IOException {
+    try (var paths = Files.walk(source)) {
+      for (Path path : paths.toList()) {
+        rejectSymlinks(path);
+        Path destination = target.resolve(source.relativize(path));
+        if (Files.isDirectory(path)) {
+          Files.createDirectories(destination);
+          if (!path.equals(source)
+              && path.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            Files.setPosixFilePermissions(destination, Files.getPosixFilePermissions(path));
+          }
+        } else {
+          Files.copy(path, destination, StandardCopyOption.COPY_ATTRIBUTES);
+        }
+      }
+    }
   }
 
   public static void write(Path path, byte[] contents, boolean secret) throws IOException {

@@ -7,328 +7,123 @@ package se.digg.wallet.pki.crypto;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.security.KeyPair;
 import java.security.cert.X509Certificate;
-import java.util.Collection;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1OctetString;
 import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.qualified.ETSIQCObjectIdentifiers;
 import org.bouncycastle.asn1.x509.qualified.QCStatement;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import se.digg.wallet.pki.config.CertificateConfig;
-import se.digg.wallet.pki.config.CertificateConfigTestBuilder;
+import se.digg.wallet.pki.domain.CertificateSubject;
+import se.digg.wallet.pki.domain.Organization;
+import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 class CertificateProfileIssuerTest {
+  private final CertificateProfileIssuer issuer =
+      new CertificateProfileIssuer(new java.security.SecureRandom(), "https://publication.example");
+  private final CertificateAuthority ca =
+      new CertificateAuthorityManager().createAuthority("test", "Example CA");
+  private final EcKeyGenerator keys = new EcKeyGenerator();
+  private final CertificateSubject subject =
+      new CertificateSubject("Example", new Organization("Example Org", "NO", "NTRNO-123"),
+          new SubjectAlternativeNames(List.of("example.test"), List.of(ipv6Example()),
+              List.of("https://example.test")));
 
-  private static final int DIGITAL_SIGNATURE = 0;
-  private static final int NON_REPUDIATION = 1;
-  private static final int KEY_ENCIPHERMENT = 2;
-  private static final int DATA_ENCIPHERMENT = 3;
-  private static final int KEY_AGREEMENT = 4;
-
-  private CertificateProfileIssuer issuer;
-  private CertificateAuthorityManager caManager;
-  private EcKeyGenerator keyGenerator;
-
-  @BeforeEach
-  void setUp() {
-    issuer = new CertificateProfileIssuer();
-    caManager = new CertificateAuthorityManager();
-    keyGenerator = new EcKeyGenerator();
+  @Test
+  void pid_and_wallet_signing_certificates_have_distinct_qc_types() throws Exception {
+    var pid = issuer.issuePidSigningCertificate(subject, keys.generateKeyPair().getPublic(), ca);
+    var wallet =
+        issuer.issueWalletSigningCertificate(subject, keys.generateKeyPair().getPublic(), ca);
+    assertThat(qcTypes(pid)).contains(CertificateProfileIssuer.OID_QC_TYPE_PID.getId())
+        .doesNotContain(CertificateProfileIssuer.OID_QC_TYPE_WAL.getId());
+    assertThat(qcTypes(wallet)).contains(CertificateProfileIssuer.OID_QC_TYPE_WAL.getId())
+        .doesNotContain(CertificateProfileIssuer.OID_QC_TYPE_PID.getId());
+    assertThat(pid.getSubjectX500Principal().getName()).contains("O=Example Org", "C=NO");
+    assertLeaf(pid);
+    assertLeaf(wallet);
   }
 
   @Test
-  void shouldIssueRelyingPartyAccessCertificate() throws Exception {
-    // 1. Setup CA, service key pair, and Relying Party Access configuration
-    CertificateAuthority ca =
-        caManager.createAuthority("verifier-access-ca", "DIGG Wallet Verifier Access CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("verifier-access-certificate")
-            .type("relying-party-access")
-            .tradeName("DIGG Verifier")
-            .country("SE")
-            .organizationIdentifier("VATSE-12345678")
-            .sans(List.of("localhost", "verifier-backend", "https://localhost/demo-verifier"))
-            .build();
-
-    // 2. Issue the certificate
-    X509Certificate cert = issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
-
-    // 3. Verify subject DN attributes (CN, O, C, organizationIdentifier)
-    X500Name x500Subject = X500Name.getInstance(cert.getSubjectX500Principal().getEncoded());
-    assertThat(x500Subject.getRDNs(BCStyle.CN)[0].getFirst().getValue().toString())
-        .isEqualTo("DIGG Verifier");
-    assertThat(x500Subject.getRDNs(BCStyle.O)[0].getFirst().getValue().toString())
-        .isEqualTo("DIGG");
-    assertThat(x500Subject.getRDNs(BCStyle.C)[0].getFirst().getValue().toString()).isEqualTo("SE");
-    assertThat(
-        x500Subject.getRDNs(BCStyle.ORGANIZATION_IDENTIFIER)[0].getFirst().getValue().toString())
-        .isEqualTo("VATSE-12345678");
-
-    // End-entity certificate (CA = false)
-    assertThat(cert.getBasicConstraints()).isEqualTo(-1);
-
-    // Key usage: digitalSignature and nonRepudiation
-    boolean[] keyUsage = cert.getKeyUsage();
-    assertThat(keyUsage[DIGITAL_SIGNATURE]).isTrue();
-    assertThat(keyUsage[NON_REPUDIATION]).isTrue();
-
-    // Extended key usage: none permitted for relying party access certificate
-    assertThat(cert.getExtendedKeyUsage()).isNull();
-
-    // Subject alternative names
-    Collection<List<?>> sans = cert.getSubjectAlternativeNames();
-    assertThat(sans)
-        .containsExactlyInAnyOrder(
-            List.of(2, "localhost"),
-            List.of(2, "verifier-backend"),
-            List.of(6, "https://localhost/demo-verifier"));
-
-    // 4. Verify signature validity against issuing CA
-    cert.verify(ca.publicKey());
+  void access_certificates_have_policy_organization_and_explicit_san_types() throws Exception {
+    var certificate =
+        issuer.issueRelyingPartyAccessCertificate(subject, keys.generateKeyPair().getPublic(), ca);
+    assertThat(certificate.getKeyUsage()[0]).isTrue();
+    assertThat(certificate.getKeyUsage()[1]).isTrue();
+    assertThat(certificate.getExtensionValue(Extension.certificatePolicies.getId())).isNotNull();
+    assertThat(certificate.getSubjectAlternativeNames()).extracting(san -> (Integer) san.getFirst())
+        .containsExactlyInAnyOrder(2, 7, 6);
+    var aia = org.bouncycastle.asn1.x509.AuthorityInformationAccess.getInstance(ASN1OctetString
+        .getInstance(certificate.getExtensionValue(Extension.authorityInfoAccess.getId()))
+        .getOctets());
+    assertThat(aia.getAccessDescriptions()[0].getAccessLocation().getName().toString())
+        .isEqualTo("https://publication.example/test/ca.pem");
+    assertLeaf(certificate);
   }
 
   @Test
-  void shouldIssueRelyingPartyRegistrationCertificate() throws Exception {
-    CertificateAuthority ca =
-        caManager.createAuthority(
-            "verifier-registration-ca", "DIGG Wallet Verifier Registration Certificate CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("verifier-registration-certificate")
-            .type("relying-party-registration")
-            .tradeName("DIGG Registration")
-            .organizationIdentifier("VATSE-12345678")
-            .sans(List.of("localhost", "verifier-backend"))
-            .build();
-
-    X509Certificate cert = issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
-
-    X500Name x500Subject = X500Name.getInstance(cert.getSubjectX500Principal().getEncoded());
-    assertThat(x500Subject.getRDNs(BCStyle.CN)[0].getFirst().getValue().toString())
-        .isEqualTo("DIGG Registration");
-    assertThat(
-        x500Subject.getRDNs(BCStyle.ORGANIZATION_IDENTIFIER)[0].getFirst().getValue().toString())
-        .isEqualTo("VATSE-12345678");
-    assertThat(cert.getBasicConstraints()).isEqualTo(-1);
-
-    boolean[] keyUsage = cert.getKeyUsage();
-    assertThat(keyUsage[DIGITAL_SIGNATURE]).isTrue();
-    assertThat(keyUsage[NON_REPUDIATION]).isFalse();
-    assertThat(cert.getExtendedKeyUsage()).isNull();
-
-    cert.verify(ca.publicKey());
+  void registration_signers_use_digital_signature_usage() throws Exception {
+    var certificate = issuer.issueRelyingPartyRegistrationCertificate(subject,
+        keys.generateKeyPair().getPublic(), ca);
+    assertThat(certificate.getKeyUsage()[0]).isTrue();
+    assertLeaf(certificate);
   }
 
   @Test
-  void shouldIssueEudiServiceCertificateWithQcStatements() throws Exception {
-    // 1. Setup CA, service key pair, and PID Issuer configuration
-    CertificateAuthority ca =
-        caManager.createAuthority("pid-issuer-ca", "DIGG Wallet PID Issuer CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("pid-issuer")
-            .type("pid-issuer-service")
-            .tradeName("PID Issuer (Ecosystem)")
-            .sans(List.of("localhost", "pid-issuer"))
-            .build();
-
-    // 2. Issue the certificate
-    X509Certificate cert = issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
-
-    // 3. Verify subject CN and qualified certificate statements (qcStatements)
-    assertThat(cert.getSubjectX500Principal().getName()).contains("CN=PID Issuer (Ecosystem)");
-    assertThat(cert.getBasicConstraints()).isEqualTo(-1);
-
-    byte[] qcBytes = cert.getExtensionValue(Extension.qCStatements.getId());
-    ASN1OctetString oct = ASN1OctetString.getInstance(qcBytes);
-    ASN1Sequence qcSeq = ASN1Sequence.getInstance(oct.getOctets());
-
-    assertThat(qcSeq.size()).isEqualTo(2);
-    QCStatement statement0 = QCStatement.getInstance(qcSeq.getObjectAt(0));
-    QCStatement statement1 = QCStatement.getInstance(qcSeq.getObjectAt(1));
-
-    assertThat(statement0.getStatementId())
-        .isEqualTo(ETSIQCObjectIdentifiers.id_etsi_qcs_QcCompliance);
-    assertThat(statement1.getStatementId())
-        .isEqualTo(ETSIQCObjectIdentifiers.id_etsi_qcs_QcType);
-    assertThat(statement1.getStatementInfo().toString()).contains("0.4.0.194126.1.1");
-
-    // 4. Verify signature validity against issuing CA
-    cert.verify(ca.publicKey());
+  void trust_source_signers_are_leaf_certificates_with_eseal_qc_type() throws Exception {
+    var certificate =
+        issuer.issueTrustSourceSignerCertificate(subject, keys.generateKeyPair().getPublic(), ca);
+    assertThat(qcTypes(certificate)).contains(CertificateProfileIssuer.OID_QC_TYPE_ESEAL.getId());
+    assertLeaf(certificate);
   }
 
   @Test
-  void shouldIssueTrustSourceSignerCertificate() throws Exception {
-    // 1. Setup CA, service key pair, and Trust Source signer configuration
-    CertificateAuthority ca =
-        caManager.createAuthority("trust-source-ca", "DIGG Wallet Trust Source CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("trust-source")
-            .type("trust-source-signer")
-            .tradeName("Trust Source (Ecosystem)")
-            .sans(List.of("localhost", "trust-source"))
-            .build();
-
-    // 2. Issue the certificate
-    X509Certificate cert = issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
-
-    // 3. Verify subject CN and electronic seal (eSeal) declaration
-    assertThat(cert.getSubjectX500Principal().getName()).contains("CN=Trust Source (Ecosystem)");
-    byte[] qcBytes = cert.getExtensionValue(Extension.qCStatements.getId());
-    ASN1OctetString oct = ASN1OctetString.getInstance(qcBytes);
-    ASN1Sequence qcSeq = ASN1Sequence.getInstance(oct.getOctets());
-
-    assertThat(qcSeq.size()).isEqualTo(2);
-    QCStatement statement0 = QCStatement.getInstance(qcSeq.getObjectAt(0));
-    QCStatement statement1 = QCStatement.getInstance(qcSeq.getObjectAt(1));
-
-    assertThat(statement0.getStatementId())
-        .isEqualTo(ETSIQCObjectIdentifiers.id_etsi_qcs_QcCompliance);
-    assertThat(statement1.getStatementId())
-        .isEqualTo(ETSIQCObjectIdentifiers.id_etsi_qcs_QcType);
-    assertThat(statement1.getStatementInfo().toString()).contains("0.4.0.1862.1.6.2");
-
-    // 4. Verify signature validity against issuing CA
-    cert.verify(ca.publicKey());
+  void encryption_certificates_have_encryption_and_agreement_usage() throws Exception {
+    var certificate =
+        issuer.issueEncryptionCertificate(subject, keys.generateKeyPair().getPublic(), ca);
+    assertThat(certificate.getKeyUsage()[2]).isTrue();
+    assertThat(certificate.getKeyUsage()[3]).isTrue();
+    assertThat(certificate.getKeyUsage()[4]).isTrue();
+    assertThat(certificate.getKeyUsage()[0]).isFalse();
+    assertLeaf(certificate);
   }
 
   @Test
-  void shouldIssueEncryptionCertificate() throws Exception {
-    // 1. Setup CA and service key pair for encryption
-    CertificateAuthority ca =
-        caManager.createAuthority("pid-issuer-ca", "DIGG Wallet PID Issuer CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    // 2. Issue the encryption certificate
-    X509Certificate cert =
-        issuer.issueEncryptionCertificate(
-            "nonce-encryption",
-            List.of("localhost"),
-            "SE",
-            serviceKeyPair.getPublic(),
-            ca);
-
-    // 3. Verify subject CN and encryption key usages
-    assertThat(cert.getSubjectX500Principal().getName()).contains("CN=nonce-encryption");
-
-    boolean[] keyUsage = cert.getKeyUsage();
-    assertThat(keyUsage[KEY_ENCIPHERMENT]).isTrue();
-    assertThat(keyUsage[DATA_ENCIPHERMENT]).isTrue();
-    assertThat(keyUsage[KEY_AGREEMENT]).isTrue();
-
-    // 4. Verify signature validity against issuing CA
-    cert.verify(ca.publicKey());
+  void invalid_sans_and_missing_organization_identifiers_are_rejected_at_construction() {
+    assertThatThrownBy(() -> new SubjectAlternativeNames(null, List.of("invalid-ip"), null))
+        .hasMessageContaining("Invalid IP SAN");
+    assertThatThrownBy(
+        () -> new SubjectAlternativeNames(List.of("https://example.test"), null, null))
+        .hasMessageContaining("Invalid DNS SAN");
+    assertThatThrownBy(() -> new SubjectAlternativeNames(null, null, List.of("relative")))
+        .hasMessageContaining("absolute");
+    assertThatThrownBy(() -> new Organization("Example", "SE", ""))
+        .hasMessageContaining("identifier");
   }
 
-  @Test
   @SuppressWarnings("PMD.AvoidUsingHardCodedIP")
-  void shouldIncludeSubjectAlternativeNamesWithDifferentTypes() throws Exception {
-    // 1. Setup CA, service key pair, and SANs with DNS, IP, URI, and plain name
-    CertificateAuthority ca =
-        caManager.createAuthority("verifier-access-ca", "DIGG Wallet Verifier Access CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("verifier-access-certificate")
-            .type("relying-party-access")
-            .tradeName("DIGG Verifier")
-            .organizationIdentifier("VATSE-12345678")
-            .sans(
-                List.of(
-                    "localhost",
-                    "DNS:api.example.com",
-                    "IP:127.0.0.1",
-                    "192.168.1.1",
-                    "URI:https://example.com/api",
-                    "https://verifier.digg.se"))
-            .build();
-
-    // 2. Issue the certificate
-    X509Certificate cert = issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
-
-    // 3. Verify SAN entries with exact types and values
-    Collection<List<?>> sans = cert.getSubjectAlternativeNames();
-    assertThat(sans)
-        .containsExactlyInAnyOrder(
-            List.of(2, "localhost"),
-            List.of(2, "api.example.com"),
-            List.of(7, "127.0.0.1"),
-            List.of(7, "192.168.1.1"),
-            List.of(6, "https://example.com/api"),
-            List.of(6, "https://verifier.digg.se"));
+  private String ipv6Example() {
+    return "2001:db8::1";
   }
 
-  @Test
-  void shouldThrowWhenRelyingPartyAccessMissingOrganizationIdentifier() {
-    CertificateAuthority ca =
-        caManager.createAuthority("verifier-access-ca", "DIGG Wallet Verifier Access CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("verifier-access-certificate")
-            .type("relying-party-access")
-            .tradeName("DIGG Verifier")
-            .organizationIdentifier(null)
-            .build();
-
-    assertThatThrownBy(() -> issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca))
-        .isInstanceOf(PkiCryptoException.class)
-        .hasMessageContaining("requires a non-blank 'organizationIdentifier'");
+  private void assertLeaf(X509Certificate certificate) throws Exception {
+    certificate.verify(ca.publicKey());
+    certificate.checkValidity();
+    assertThat(certificate.getBasicConstraints()).isEqualTo(-1);
   }
 
-  @Test
-  void shouldThrowWhenProfileTypeIsUnknown() {
-    CertificateAuthority ca =
-        caManager.createAuthority("verifier-access-ca", "DIGG Wallet Verifier Access CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("custom-cert")
-            .type("unknown-profile-type")
-            .tradeName("Unknown")
-            .build();
-
-    assertThatThrownBy(() -> issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("Unknown certificate profile type: unknown-profile-type");
-  }
-
-  @Test
-  void shouldThrowWhenSanHasInvalidIpAddress() {
-    CertificateAuthority ca =
-        caManager.createAuthority("verifier-access-ca", "DIGG Wallet Verifier Access CA");
-    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("verifier-access-certificate")
-            .type("relying-party-access")
-            .tradeName("DIGG Verifier")
-            .organizationIdentifier("VATSE-12345678")
-            .sans(List.of("IP:not-an-ip-address"))
-            .build();
-
-    assertThatThrownBy(() -> issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca))
-        .isInstanceOf(PkiCryptoException.class)
-        .hasMessageContaining("Invalid IP address in SAN: not-an-ip-address");
+  private List<String> qcTypes(X509Certificate certificate) {
+    var sequence = ASN1Sequence.getInstance(ASN1OctetString
+        .getInstance(certificate.getExtensionValue(Extension.qCStatements.getId())).getOctets());
+    var types = new java.util.ArrayList<String>();
+    for (var value : sequence) {
+      var statement = QCStatement.getInstance(value);
+      if (ETSIQCObjectIdentifiers.id_etsi_qcs_QcType.equals(statement.getStatementId())) {
+        for (var type : ASN1Sequence.getInstance(statement.getStatementInfo())) {
+          types.add(type.toString());
+        }
+      }
+    }
+    return types;
   }
 }

@@ -7,101 +7,35 @@ package se.digg.wallet.pki.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class SecretResolverTest {
-
   @Test
-  void password_files_preserve_spaces_and_remove_line_endings(@TempDir Path tempDir)
-      throws IOException {
-    Path secretFile = tempDir.resolve("secret.txt");
-    Files.writeString(secretFile, " password with spaces \r\n");
+  void selected_environment_passwords_are_resolved() {
+    var secrets = new SecretResolver(name -> name.equals("PASSWORD") ? "value" : null);
 
-    char[] resolved = new SecretResolver().resolve(null, secretFile.toString());
-
-    assertThat(resolved).isEqualTo(" password with spaces ".toCharArray());
+    assertThat(secrets.resolve(new PasswordSource("PASSWORD", null)))
+        .isEqualTo("value".toCharArray());
   }
 
   @Test
-  void shouldResolvePasswordFromEnvironmentVariable() {
-    // 1. Mock environment variable provider
-    Map<String, String> mockEnv = Map.of("MY_SECRET_PASS", "super-secret-123");
-    SecretResolver resolver = new SecretResolver(mockEnv::get);
+  void missing_password_values_never_appear_in_errors() {
+    var secrets = new SecretResolver(name -> null);
 
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder().id("my-cert").passwordEnv("MY_SECRET_PASS")
-            .build();
-
-    // 2. Resolve password and verify match
-    String resolved = resolver.resolveKeystorePassword(config);
-    assertThat(resolved).isEqualTo("super-secret-123");
+    assertThatThrownBy(() -> secrets.resolve(new PasswordSource("PASSWORD", null)))
+        .isInstanceOf(PkiConfigurationException.class).hasMessageContaining("not set or empty");
   }
 
   @Test
-  void shouldThrowWhenEnvironmentVariableIsUnset() {
-    // Verify exception when requested environment variable is unset
-    SecretResolver resolver = new SecretResolver(key -> null);
+  void password_files_preserve_spaces_and_strip_line_endings(@TempDir Path directory)
+      throws Exception {
+    Path file = directory.resolve("password");
+    Files.writeString(file, " value \r\n");
 
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder().id("my-cert").passwordEnv("UNSET_SECRET_PASS")
-            .build();
-
-    assertThatThrownBy(() -> resolver.resolveKeystorePassword(config))
-        .isInstanceOf(PkiConfigurationException.class)
-        .hasMessageContaining(
-            "Environment variable 'UNSET_SECRET_PASS' for certificate 'my-cert' is not set");
-  }
-
-  @Test
-  void shouldResolvePasswordFromPasswordFile(@TempDir Path tempDir) throws IOException {
-    // 1. Create temporary password file (Kubernetes secret mount scenario)
-    Path secretFile = tempDir.resolve("secret.txt");
-    Files.writeString(secretFile, "file-secret-password\n");
-
-    SecretResolver resolver = new SecretResolver();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder().id("file-cert")
-            .passwordFile(secretFile.toString()).build();
-
-    // 2. Resolve password from file and verify match
-    String resolved = resolver.resolveKeystorePassword(config);
-    assertThat(resolved).isEqualTo("file-secret-password");
-  }
-
-  @Test
-  void shouldThrowWhenPasswordFileDoesNotExist() {
-    // Verify exception when password file is missing on disk
-    SecretResolver resolver = new SecretResolver();
-
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("file-cert")
-            .passwordFile("non-existent-secret.txt")
-            .build();
-
-    assertThatThrownBy(() -> resolver.resolveKeystorePassword(config))
-        .isInstanceOf(PkiConfigurationException.class)
-        .hasMessageContaining(
-            "Password file 'non-existent-secret.txt' for certificate 'file-cert' does not exist");
-  }
-
-  @Test
-  void shouldThrowWhenNoPasswordConfigSpecified() {
-    // Verify that creating a CertificateConfig without password configuration fails constructor
-    // validation
-    assertThatThrownBy(
-        () -> CertificateConfigTestBuilder.builder()
-            .id("no-pass-cert")
-            .passwordEnv(null)
-            .passwordFile(null)
-            .build())
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("must specify passwordEnv or passwordFile");
+    assertThat(new SecretResolver().resolve(new PasswordSource(null, file.toString())))
+        .isEqualTo(" value ".toCharArray());
   }
 }
