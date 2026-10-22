@@ -150,4 +150,29 @@ class LoteGeneratorTest {
         .contains("DIGG Wallet PID Issuer CA")
         .contains("X509Certificates");
   }
+
+  @Test
+  void shouldBuildLoteWithWrpacAndWrprcEntities() {
+    CertificateAuthority wrpacCa =
+        caManager.createAuthority(
+            "verifier-access-ca", "DIGG Wallet Verifier Access Certificate CA");
+    CertificateAuthority wrprcCa =
+        caManager.createAuthority(
+            "verifier-registration-ca", "DIGG Wallet Verifier Registration Certificate CA");
+
+    LoteDocument doc =
+        loteGenerator.buildLoteDocument(List.of(wrpacCa.certificate(), wrprcCa.certificate()));
+
+    assertThat(doc.lote().trustedEntitiesList()).hasSize(2);
+    assertThat(
+        doc.lote().trustedEntitiesList().get(0)
+            .trustedEntityServices().get(0)
+            .serviceInformation().serviceTypeIdentifier())
+        .isEqualTo("http://uri.etsi.org/19602/SvcType/WRPAC/Issuance");
+    assertThat(
+        doc.lote().trustedEntitiesList().get(1)
+            .trustedEntityServices().get(0)
+            .serviceInformation().serviceTypeIdentifier())
+        .isEqualTo("http://uri.etsi.org/19602/SvcType/WRPRC/Issuance");
+  }
 }

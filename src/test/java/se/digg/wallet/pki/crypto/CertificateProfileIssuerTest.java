@@ -81,9 +81,8 @@ class CertificateProfileIssuerTest {
     assertThat(keyUsage[DIGITAL_SIGNATURE]).isTrue();
     assertThat(keyUsage[NON_REPUDIATION]).isTrue();
 
-    // Extended key usage: clientAuth and serverAuth
-    List<String> eku = cert.getExtendedKeyUsage();
-    assertThat(eku).contains("1.3.6.1.5.5.7.3.2", "1.3.6.1.5.5.7.3.1");
+    // Extended key usage: none permitted for relying party access certificate
+    assertThat(cert.getExtendedKeyUsage()).isNull();
 
     // Subject alternative names
     Collection<List<?>> sans = cert.getSubjectAlternativeNames();
@@ -94,6 +93,40 @@ class CertificateProfileIssuerTest {
             List.of(6, "https://localhost/demo-verifier"));
 
     // 4. Verify signature validity against issuing CA
+    cert.verify(ca.publicKey());
+  }
+
+  @Test
+  void shouldIssueRelyingPartyRegistrationCertificate() throws Exception {
+    CertificateAuthority ca =
+        caManager.createAuthority(
+            "verifier-registration-ca", "DIGG Wallet Verifier Registration Certificate CA");
+    KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
+
+    CertificateConfig config =
+        CertificateConfigTestBuilder.builder()
+            .id("verifier-registration-certificate")
+            .type("relying-party-registration")
+            .tradeName("DIGG Registration")
+            .organizationIdentifier("VATSE-12345678")
+            .sans(List.of("localhost", "verifier-backend"))
+            .build();
+
+    X509Certificate cert = issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
+
+    X500Name x500Subject = X500Name.getInstance(cert.getSubjectX500Principal().getEncoded());
+    assertThat(x500Subject.getRDNs(BCStyle.CN)[0].getFirst().getValue().toString())
+        .isEqualTo("DIGG Registration");
+    assertThat(
+        x500Subject.getRDNs(BCStyle.ORGANIZATION_IDENTIFIER)[0].getFirst().getValue().toString())
+        .isEqualTo("VATSE-12345678");
+    assertThat(cert.getBasicConstraints()).isEqualTo(-1);
+
+    boolean[] keyUsage = cert.getKeyUsage();
+    assertThat(keyUsage[DIGITAL_SIGNATURE]).isTrue();
+    assertThat(keyUsage[NON_REPUDIATION]).isFalse();
+    assertThat(cert.getExtendedKeyUsage()).isNull();
+
     cert.verify(ca.publicKey());
   }
 

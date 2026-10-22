@@ -37,12 +37,7 @@ public record AuthorityConfig(
     }
   }
 
-  /**
-   * Convenience constructor for basic CA configuration.
-   *
-   * @param id authority identifier
-   * @param commonName common name
-   */
+  /** Convenience constructor for basic CA configuration. */
   public AuthorityConfig(String id, String commonName) {
     this(id, commonName, "EC_P256", null, null);
   }

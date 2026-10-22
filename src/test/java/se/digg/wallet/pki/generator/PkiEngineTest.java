@@ -39,13 +39,7 @@ class PkiEngineTest {
             "TEST_PROVIDER_KEYSTORE_PASSWORD", "provider-secret-123");
 
     SecretResolver secretResolver = new SecretResolver(mockSecrets::get);
-    pkiEngine =
-        new PkiEngine(
-            new se.digg.wallet.pki.crypto.EcKeyGenerator(),
-            new se.digg.wallet.pki.crypto.CertificateAuthorityManager(),
-            new se.digg.wallet.pki.crypto.CertificateProfileIssuer(),
-            new KeystoreManager(),
-            secretResolver);
+    pkiEngine = new PkiEngine(secretResolver);
     keystoreManager = new KeystoreManager();
   }
 
@@ -175,13 +169,7 @@ class PkiEngineTest {
     Map<String, String> selectiveSecrets =
         Map.of("TEST_PID_ISSUER_KEYSTORE_PASSWORD", "pid-issuer-secret-123");
 
-    PkiEngine selectiveEngine =
-        new PkiEngine(
-            new se.digg.wallet.pki.crypto.EcKeyGenerator(),
-            new se.digg.wallet.pki.crypto.CertificateAuthorityManager(),
-            new se.digg.wallet.pki.crypto.CertificateProfileIssuer(),
-            new KeystoreManager(),
-            new SecretResolver(selectiveSecrets::get));
+    PkiEngine selectiveEngine = new PkiEngine(new SecretResolver(selectiveSecrets::get));
 
     PkiConfiguration config = createTestConfiguration(tempDir);
 

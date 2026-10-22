@@ -25,6 +25,7 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
@@ -63,15 +64,34 @@ public class TrustListSigner {
    */
   public String signJws(
       String jsonPayload, PrivateKey privateKey, X509Certificate signingCert, String type) {
+    Objects.requireNonNull(signingCert, "signingCert must not be null");
+    return signJws(jsonPayload, privateKey, List.of(signingCert), type);
+  }
+
+  /**
+   * Signs a JSON payload as a compact JWS with ES256, embedded X.509 certificate chain, and custom
+   * typ header.
+   *
+   * @param jsonPayload the JSON payload string to sign
+   * @param privateKey the private key for ES256 signing
+   * @param certChain the X.509 certificate chain to embed in the x5c header
+   * @param type the typ header value (e.g. 'trustlist+jwt' or 'statuslist+jwt')
+   * @return compact JWS string
+   */
+  public String signJws(
+      String jsonPayload, PrivateKey privateKey, List<X509Certificate> certChain, String type) {
     Objects.requireNonNull(jsonPayload, "jsonPayload must not be null");
     Objects.requireNonNull(privateKey, "privateKey must not be null");
-    Objects.requireNonNull(signingCert, "signingCert must not be null");
+    Objects.requireNonNull(certChain, "certChain must not be null");
 
     try {
-      Base64 x5c = Base64.encode(signingCert.getEncoded());
+      List<Base64> x5cList = new ArrayList<>();
+      for (X509Certificate cert : certChain) {
+        x5cList.add(Base64.encode(cert.getEncoded()));
+      }
       JWSHeader.Builder headerBuilder =
           new JWSHeader.Builder(JWSAlgorithm.ES256)
-              .x509CertChain(List.of(x5c));
+              .x509CertChain(x5cList);
       if (type != null && !type.isBlank()) {
         headerBuilder.type(new JOSEObjectType(type));
       }

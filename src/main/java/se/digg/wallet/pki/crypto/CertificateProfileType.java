@@ -9,6 +9,7 @@ import java.util.Arrays;
 /** Supported certificate profile types for the EUDI wallet ecosystem. */
 public enum CertificateProfileType {
   RELYING_PARTY_ACCESS("relying-party-access"),
+  RELYING_PARTY_REGISTRATION("relying-party-registration"),
   PID_ISSUER_SERVICE("pid-issuer-service"),
   WALLET_PROVIDER_SERVICE("wallet-provider-service"),
   TRUST_SOURCE_SIGNER("trust-source-signer"),
