@@ -13,6 +13,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import se.digg.wallet.pki.support.EcosystemFixture;
+import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.dataformat.yaml.YAMLMapper;
 
 class ConfigurationLoaderTest {
   @TempDir
@@ -20,9 +22,9 @@ class ConfigurationLoaderTest {
   private final ConfigurationLoader loader = new ConfigurationLoader();
 
   @Test
-  void the_example_declares_all_five_authorities_and_their_consumers() throws Exception {
+  void the_example_configures_participants_without_authority_settings() throws Exception {
     var config = loader.load(EcosystemFixture.configurationFile(directory));
-    assertThat(config.pidIssuer().authority().source()).isEqualTo(AuthorityConfig.Source.MANAGED);
+    assertThat(config.pidIssuer().signing().commonName()).isEqualTo("PID Issuer (Ecosystem)");
     assertThat(config.walletProvider().signing().subjectAlternativeNames().dns())
         .contains("wallet-provider");
     assertThat(config.verifier().registration().registration().requestedPidClaims())
@@ -79,19 +81,28 @@ class ConfigurationLoaderTest {
         .hasMessageContaining("Configuration file not found");
   }
 
-  @Test
-  void managed_and_existing_authority_settings_cannot_be_mixed() {
-    assertThatThrownBy(
-        () -> new AuthorityConfig(AuthorityConfig.Source.MANAGED, "CA", "cert", "key", "crl"))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(
-        () -> new AuthorityConfig(AuthorityConfig.Source.EXISTING, null, "cert", "key", null))
-        .hasMessageContaining("crlFile");
+  @ParameterizedTest
+  @ValueSource(strings = {"pidIssuer", "walletProvider", "verifier.access", "verifier.registration",
+      "trustSource"})
+  void authority_settings_are_rejected_for_every_role(String section) throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = yaml.readTree(EcosystemFixture.yaml(directory));
+    var participant = document;
+    for (String component : section.split("\\.")) {
+      participant = participant.path(component);
+    }
+    ((ObjectNode) participant).putObject("authority").put("source", "managed");
+    assertInvalid(yaml.writeValueAsString(document), "authority");
   }
 
   @Test
   void duplicate_yaml_fields_are_rejected() throws Exception {
-    assertInvalid(EcosystemFixture.yaml(directory).replace("schemaVersion: 1", "schemaVersion: 1\n schemaVersion: 1".replace("\n ", "\n")), "Duplicate field");
+    Path file = directory.resolve("duplicate.yaml");
+    Files.writeString(file, EcosystemFixture.yaml(directory)
+        .replace("schemaVersion: 1", "schemaVersion: 1\nschemaVersion: 1"));
+    assertThatThrownBy(() -> loader.load(file)).isInstanceOf(PkiConfigurationException.class)
+        .hasMessageContaining("Duplicate")
+        .hasMessageContaining("schemaVersion");
   }
 
   private void assertInvalid(String yaml, String message) throws Exception {

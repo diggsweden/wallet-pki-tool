@@ -12,9 +12,6 @@ organization:
   identifier: VATSE-12345678
 
 pidIssuer:
-  authority:
-    source: managed
-    commonName: DIGG Wallet PID Issuer CA
   signing:
     commonName: PID Issuer (Ecosystem)
     subjectAlternativeNames:
@@ -29,9 +26,6 @@ pidIssuer:
     subject: did:web:localhost
 
 walletProvider:
-  authority:
-    source: managed
-    commonName: DIGG Wallet Provider CA
   signing:
     commonName: Wallet Provider (Ecosystem)
     subjectAlternativeNames:
@@ -41,9 +35,6 @@ walletProvider:
 
 verifier:
   access:
-    authority:
-      source: managed
-      commonName: DIGG Wallet Verifier Access Certificate CA
     commonName: Verifier Backend (Ecosystem)
     subjectAlternativeNames:
       dns: [localhost, verifier-backend]
@@ -51,9 +42,6 @@ verifier:
     keystorePassword:
       env: VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD
   registration:
-    authority:
-      source: managed
-      commonName: DIGG Wallet Verifier Registration Certificate CA
     commonName: Verifier Registration (Ecosystem)
     keystorePassword:
       env: VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD
@@ -88,9 +76,6 @@ verifier:
         email: walletecosystem@example.com
 
 trustSource:
-  authority:
-    source: managed
-    commonName: DIGG Wallet Trust Source CA
   signer:
     commonName: Trust Source (Ecosystem)
     keystorePassword:

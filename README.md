@@ -49,27 +49,19 @@ All five role sections are required. Selective generation limits which inputs ar
 
 The organization name, country and identifier come from `organization`. Subject alternative names have explicit `dns`, `ip` and `uri` lists. Omitted SAN settings mean an empty list. PID signing and wallet signing use distinct QC types.
 
-Each authority has exactly one source:
+The CLI owns one local CA for each role. There are no `authority` YAML blocks or source/file selectors. [`AuthorityRole`](src/main/java/se/digg/wallet/pki/domain/AuthorityRole.java) explicitly defines the same CA common names previously listed in the example:
 
-```yaml
-authority:
-  source: managed
-  commonName: DIGG Wallet PID Issuer CA
-```
+| Role | CA common name |
+| :--- | :--- |
+| PID issuer | `DIGG Wallet PID Issuer CA` |
+| Wallet provider | `DIGG Wallet Provider CA` |
+| Verifier access | `DIGG Wallet Verifier Access Certificate CA` |
+| Verifier registration | `DIGG Wallet Verifier Registration Certificate CA` |
+| Trust source | `DIGG Wallet Trust Source CA` |
 
-Or supply an existing root, its matching EC P-256 key, and its current signed CRL:
+The CA organization and country still come from `organization`. State paths, public certificate/CRL paths, certificate profiles and keystore aliases are unchanged.
 
-```yaml
-authority:
-  source: existing
-  certificateFile: /run/secrets/pid-issuer-ca.pem
-  privateKeyFile: /run/secrets/pid-issuer-ca-key.pem
-  crlFile: /run/secrets/pid-issuer-crl.pem
-```
-
-Existing roots are read and validated, never modified or copied into private managed state. Their public certificate and supplied CRL are published. Missing, invalid, expired or mismatched material fails.
-
-`init-authorities` creates absent managed roots, validates complete existing state, and publishes CA certificates and CRLs. It requires no keystore passwords. Repeating it preserves all CA keys, certificates and CRLs. Incomplete state is an error. Changing an initialized managed CA's subject requires an explicit migration.
+`init-authorities` creates absent roots, validates complete existing state, and publishes CA certificates and CRLs. It requires no keystore passwords. Repeating it preserves all CA keys, certificates and CRLs. Incomplete state is an error. Changing the organization of an initialized CA requires an explicit migration. Missing, invalid, expired or mismatched material fails when loaded.
 
 `generate` only loads authorities. It never creates or replaces a CA. Authority rotation and CRL editing are not CLI operations in this revision.
 
@@ -138,7 +130,7 @@ There is no certificate registry, generic profile dispatch, string reference res
 
 This is a breaking schema change. `authorities`, `certificates`, `trustLists`, arbitrary IDs, profile strings and configurable aliases/output filenames are removed. Use the example to configure the five roles. `outputDirectory` now points at the ecosystem's `config/` root, not its `certificates/` subdirectory. Target names are the fixed operations listed above.
 
-To preserve existing trust anchors, configure each as `source: existing` with its current certificate, key and CRL. Do not initialize fresh managed roots when you intend to keep existing trust relationships. The CLI does not inspect old directories to infer a migration.
+If you used the earlier role-based example, remove the five `authority` blocks; existing local CA state remains in the same directories and is reused. External CA source/file selectors are no longer supported. To preserve roots from another location, explicitly place their current `ca.pem`, `ca_private_key.pem` and `revocation-list.pem` under `stateDirectory/authorities/<role>/` before initialization. They must match the fixed role common name and configured organization/country. The CLI does not inspect old directories to infer a migration.
 
 The automatic `trusted_issuers.p12` side output was removed: it is not consumed by the inspected ecosystem Compose configuration. No private trust-source PEM key is exported; the CLI signs from its PKCS#12 keystore. The registration alias is explicitly `registration`, matching the ecosystem script. Automatic `.license` sidecars are not generated.
 
@@ -149,4 +141,4 @@ just lint-fix
 just verify
 ```
 
-Tests exercise real certificate issuance, PKCS#12 contents, JWT signatures and payloads, explicit LoTE role mapping, imported authority validation, CA reuse and selective generation. They do not start the ecosystem services.
+Tests exercise real certificate issuance, PKCS#12 contents, JWT signatures and payloads, explicit LoTE role mapping, fixed authority subjects and paths, CA reuse and selective generation. They do not start the ecosystem services.

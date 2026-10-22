@@ -9,10 +9,9 @@ import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 /** PID signing, nonce encryption and request encryption are always provisioned together. */
-public record PidIssuerConfig(AuthorityConfig authority, SigningConfig signing,
+public record PidIssuerConfig(SigningConfig signing,
     Encryption encryption, PasswordSource keystorePassword, Registration registration) {
   public PidIssuerConfig {
-    Checks.required(authority, "pidIssuer.authority");
     Checks.required(signing, "pidIssuer.signing");
     Checks.required(encryption, "pidIssuer.encryption");
     Checks.required(keystorePassword, "pidIssuer.keystorePassword");

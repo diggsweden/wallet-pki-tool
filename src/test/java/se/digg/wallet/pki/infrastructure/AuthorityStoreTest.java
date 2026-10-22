@@ -10,6 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
@@ -19,6 +21,29 @@ import se.digg.wallet.pki.support.EcosystemFixture;
 class AuthorityStoreTest {
   @TempDir
   Path directory;
+
+  @ParameterizedTest
+  @CsvSource({
+      "PID_ISSUER, pid-issuer, DIGG Wallet PID Issuer CA",
+      "WALLET_PROVIDER, wallet-provider, DIGG Wallet Provider CA",
+      "VERIFIER_ACCESS, verifier-access-certificate, DIGG Wallet Verifier Access Certificate CA",
+      "VERIFIER_REGISTRATION, verifier-registration-certificate, DIGG Wallet Verifier Registration Certificate CA",
+      "TRUST_SOURCE, trust-source, DIGG Wallet Trust Source CA"
+  })
+  void fixed_authorities_preserve_existing_subjects_and_artifact_paths(
+      AuthorityRole role, String roleDirectory, String commonName) throws Exception {
+    var config = EcosystemFixture.configuration(directory);
+    var authority = new AuthorityStore(config).initialize(role);
+    assertThat(authority.certificate().getSubjectX500Principal().getName())
+        .contains("CN=" + commonName, "O=DIGG", "C=SE");
+    Path state = directory.resolve("state/authorities").resolve(roleDirectory);
+    Path publication = directory.resolve("config/trust-source").resolve(roleDirectory);
+    assertThat(Files.isRegularFile(state.resolve("ca_private_key.pem"))).isTrue();
+    for (String name : java.util.List.of("ca.pem", "revocation-list.pem")) {
+      assertThat(Files.readAllBytes(publication.resolve(name)))
+          .isEqualTo(Files.readAllBytes(state.resolve(name)));
+    }
+  }
 
   @Test
   void repeated_initialization_preserves_all_authority_material() throws Exception {
@@ -50,28 +75,24 @@ class AuthorityStoreTest {
   }
 
   @Test
-  void imported_authorities_preserve_the_supplied_crl_and_inputs() throws Exception {
+  void existing_authority_files_are_reused_without_replacing_keys_certificates_or_crls()
+      throws Exception {
+    var config = EcosystemFixture.configuration(directory);
+    var layout = new EcosystemLayout(config);
     var manager = new CertificateAuthorityManager();
-    var original = manager.createAuthority("external", "External CA");
-    Path imported = directory.resolve("imported");
-    manager.saveAuthority(original, imported);
-    Path file = EcosystemFixture.configurationFile(directory);
-    String yaml = Files.readString(file).replace(
-        "    source: managed\n    commonName: DIGG Wallet PID Issuer CA",
-        "    source: existing\n    certificateFile: " + imported.resolve("ca.pem")
-            + "\n    privateKeyFile: " + imported.resolve("ca_private_key.pem")
-            + "\n    crlFile: " + imported.resolve("revocation-list.pem"));
-    Files.writeString(file, yaml);
-    var config = new ConfigurationLoader().load(file);
+    var original = manager.createAuthority("pid-issuer", "DIGG Wallet PID Issuer CA",
+        config.organization());
+    Path state = layout.authority(AuthorityRole.PID_ISSUER);
+    manager.saveAuthority(original, state);
     var store = new AuthorityStore(config);
-    byte[] crlBefore = Files.readAllBytes(imported.resolve("revocation-list.pem"));
-    assertThat(store.initialize(AuthorityRole.PID_ISSUER).certificate())
-        .isEqualTo(original.certificate());
-    assertThat(Files.readAllBytes(new EcosystemLayout(config).publication(AuthorityRole.PID_ISSUER)
+    byte[] crlBefore = Files.readAllBytes(state.resolve("revocation-list.pem"));
+    var reloaded = store.initialize(AuthorityRole.PID_ISSUER);
+    assertThat(reloaded.certificate()).isEqualTo(original.certificate());
+    assertThat(reloaded.privateKey().getEncoded()).isEqualTo(original.privateKey().getEncoded());
+    assertThat(reloaded.crl()).isEqualTo(original.crl());
+    assertThat(Files.readAllBytes(layout.publication(AuthorityRole.PID_ISSUER)
         .resolve("revocation-list.pem"))).isEqualTo(crlBefore);
-    assertThat(Files.readAllBytes(imported.resolve("revocation-list.pem"))).isEqualTo(crlBefore);
-    assertThat(Files.exists(new EcosystemLayout(config).authority(AuthorityRole.PID_ISSUER)))
-        .isFalse();
+    assertThat(Files.readAllBytes(state.resolve("revocation-list.pem"))).isEqualTo(crlBefore);
   }
 
   @Test
@@ -115,12 +136,12 @@ class AuthorityStoreTest {
   }
 
   @Test
-  void changed_managed_authority_names_require_an_explicit_migration() throws Exception {
+  void changed_organizations_require_an_explicit_authority_migration() throws Exception {
     var config = EcosystemFixture.configuration(directory);
     new AuthorityStore(config).initialize(AuthorityRole.PID_ISSUER);
     Path file = directory.resolve("ecosystem.yaml");
     Files.writeString(file,
-        Files.readString(file).replace("DIGG Wallet PID Issuer CA", "Changed PID CA"));
+        Files.readString(file).replace("  name: DIGG\n", "  name: Changed Organization\n"));
     var changed = new ConfigurationLoader().load(file);
     assertThatThrownBy(() -> new AuthorityStore(changed).load(AuthorityRole.PID_ISSUER))
         .hasMessageContaining("subject differs");

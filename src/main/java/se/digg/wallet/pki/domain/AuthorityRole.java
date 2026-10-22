@@ -4,19 +4,28 @@
 
 package se.digg.wallet.pki.domain;
 
-/** Fixed authority identities and their publication directory names. */
+/** Fixed ecosystem CA subjects and their state/publication directory names. */
 public enum AuthorityRole {
-  PID_ISSUER("pid-issuer"), WALLET_PROVIDER("wallet-provider"),
-  VERIFIER_ACCESS("verifier-access-certificate"),
-  VERIFIER_REGISTRATION("verifier-registration-certificate"), TRUST_SOURCE("trust-source");
+  PID_ISSUER("pid-issuer", "DIGG Wallet PID Issuer CA"),
+  WALLET_PROVIDER("wallet-provider", "DIGG Wallet Provider CA"),
+  VERIFIER_ACCESS("verifier-access-certificate", "DIGG Wallet Verifier Access Certificate CA"),
+  VERIFIER_REGISTRATION("verifier-registration-certificate",
+      "DIGG Wallet Verifier Registration Certificate CA"),
+  TRUST_SOURCE("trust-source", "DIGG Wallet Trust Source CA");
 
   private final String directory;
+  private final String commonName;
 
-  AuthorityRole(String directory) {
+  AuthorityRole(String directory, String commonName) {
     this.directory = directory;
+    this.commonName = commonName;
   }
 
   public String directory() {
     return directory;
+  }
+
+  public String commonName() {
+    return commonName;
   }
 }

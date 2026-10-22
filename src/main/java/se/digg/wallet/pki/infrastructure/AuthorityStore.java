@@ -11,7 +11,6 @@ import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.style.BCStyle;
-import se.digg.wallet.pki.config.AuthorityConfig;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.PkiConfigurationException;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
@@ -19,7 +18,7 @@ import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.domain.AuthorityRole;
 
-/** Explicit authority lifecycle. Only initialize() can create a managed root. */
+/** Loads the five local ecosystem CAs. Only initialize() can create a missing root. */
 public final class AuthorityStore {
   private final PkiConfiguration config;
   private final EcosystemLayout layout;
@@ -32,46 +31,25 @@ public final class AuthorityStore {
     this.layout = new EcosystemLayout(config);
   }
 
-  private AuthorityConfig settings(AuthorityRole role) {
-    return switch (role) {
-      case PID_ISSUER -> config.pidIssuer().authority();
-      case WALLET_PROVIDER -> config.walletProvider().authority();
-      case VERIFIER_ACCESS -> config.verifier().access().authority();
-      case VERIFIER_REGISTRATION -> config.verifier().registration().authority();
-      case TRUST_SOURCE -> config.trustSource().authority();
-    };
-  }
-
   private Path certificatePath(AuthorityRole role) {
-    AuthorityConfig authority = settings(role);
-    return authority.source() == AuthorityConfig.Source.EXISTING
-        ? Path.of(authority.certificateFile())
-        : layout.authority(role).resolve("ca.pem");
+    return layout.authority(role).resolve("ca.pem");
   }
 
   private Path keyPath(AuthorityRole role) {
-    AuthorityConfig authority = settings(role);
-    return authority.source() == AuthorityConfig.Source.EXISTING
-        ? Path.of(authority.privateKeyFile())
-        : layout.authority(role).resolve("ca_private_key.pem");
+    return layout.authority(role).resolve("ca_private_key.pem");
   }
 
   private Path crlPath(AuthorityRole role) {
-    AuthorityConfig authority = settings(role);
-    return authority.source() == AuthorityConfig.Source.EXISTING
-        ? Path.of(authority.crlFile())
-        : layout.authority(role).resolve("revocation-list.pem");
+    return layout.authority(role).resolve("revocation-list.pem");
   }
 
   public CertificateAuthority initialize(AuthorityRole role) {
-    if (settings(role).source() == AuthorityConfig.Source.MANAGED) {
-      boolean anyFileExists = Arrays.asList(keyPath(role), certificatePath(role), crlPath(role))
-          .stream().anyMatch(Files::exists);
-      if (!anyFileExists) {
-        var created = manager.createAuthority(role.directory(), settings(role).commonName(),
-            config.organization());
-        manager.saveAuthority(created, layout.authority(role));
-      }
+    boolean anyFileExists = Arrays.asList(keyPath(role), certificatePath(role), crlPath(role))
+        .stream().anyMatch(Files::exists);
+    if (!anyFileExists) {
+      var created = manager.createAuthority(role.directory(), role.commonName(),
+          config.organization());
+      manager.saveAuthority(created, layout.authority(role));
     }
     var authority = load(role);
     publish(role, authority);
@@ -94,14 +72,12 @@ public final class AuthorityStore {
     requireFile(certificatePath(role), role);
     var certificate = manager.readCertificatePem(certificatePath(role));
     manager.validateRootCertificate(certificate);
-    if (settings(role).source() == AuthorityConfig.Source.MANAGED) {
-      X500Name subject = X500Name.getInstance(certificate.getSubjectX500Principal().getEncoded());
-      if (!attribute(subject, BCStyle.CN).equals(settings(role).commonName())
-          || !attribute(subject, BCStyle.O).equals(config.organization().name())
-          || !attribute(subject, BCStyle.C).equals(config.organization().country())) {
-        throw new PkiConfigurationException(
-            "Managed authority subject differs from configuration: " + role.directory());
-      }
+    X500Name subject = X500Name.getInstance(certificate.getSubjectX500Principal().getEncoded());
+    if (!attribute(subject, BCStyle.CN).equals(role.commonName())
+        || !attribute(subject, BCStyle.O).equals(config.organization().name())
+        || !attribute(subject, BCStyle.C).equals(config.organization().country())) {
+      throw new PkiConfigurationException(
+          "Managed authority subject differs from configuration: " + role.directory());
     }
     return certificate;
   }

@@ -7,10 +7,9 @@ package se.digg.wallet.pki.config;
 import se.digg.wallet.pki.domain.Checks;
 
 /** Wallet attestation signing material, issued by its own authority. */
-public record WalletProviderConfig(AuthorityConfig authority, SigningConfig signing,
+public record WalletProviderConfig(SigningConfig signing,
     PasswordSource keystorePassword) {
   public WalletProviderConfig {
-    Checks.required(authority, "walletProvider.authority");
     Checks.required(signing, "walletProvider.signing");
     Checks.required(keystorePassword, "walletProvider.keystorePassword");
   }

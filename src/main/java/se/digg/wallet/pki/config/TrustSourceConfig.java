@@ -7,10 +7,9 @@ package se.digg.wallet.pki.config;
 import se.digg.wallet.pki.domain.Checks;
 
 /** LoTE and status lists always use a dedicated leaf under the trust-source CA. */
-public record TrustSourceConfig(AuthorityConfig authority, Signer signer,
+public record TrustSourceConfig(Signer signer,
     String publicationBaseUrl, LoteConfig lote, StatusList statusList) {
   public TrustSourceConfig {
-    Checks.required(authority, "trustSource.authority");
     Checks.required(signer, "trustSource.signer");
     Checks.httpUrl(publicationBaseUrl, "trustSource.publicationBaseUrl");
     Checks.required(lote, "trustSource.lote");
