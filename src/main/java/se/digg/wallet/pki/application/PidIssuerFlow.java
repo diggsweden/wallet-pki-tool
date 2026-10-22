@@ -12,13 +12,13 @@ import se.digg.wallet.pki.domain.CertificateSubject;
 import se.digg.wallet.pki.domain.PidIssuerMaterial;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.domain.WalletRole;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
+import se.digg.wallet.pki.infrastructure.ArtifactLayout;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 
 /** PID signing, nonce and request encryption are one identity lifecycle. */
 final class PidIssuerFlow {
-  static void provision(PkiConfiguration config, CertificateAuthority ca, EcosystemLayout layout,
+  static void provision(PkiConfiguration config, CertificateAuthority ca, ArtifactLayout layout,
       Clock clock, char[] password, boolean issue, boolean rotate) throws Exception {
     var stores = new IdentityStores(clock);
     var pid = config.pidIssuer();

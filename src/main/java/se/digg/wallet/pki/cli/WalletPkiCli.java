@@ -17,16 +17,15 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
-import se.digg.wallet.pki.application.EcosystemProvisioner;
 import se.digg.wallet.pki.application.Operation;
 import se.digg.wallet.pki.application.ProvisioningReport;
-import se.digg.wallet.pki.application.SandboxProvisioner;
+import se.digg.wallet.pki.application.WalletProvisioner;
 import se.digg.wallet.pki.config.SecretResolver;
 import se.digg.wallet.pki.storage.ArtifactStore;
 
-/** Two deployment workflows with fixed wallet-role operations. */
+/** Wallet-role operations using the explicitly configured authority sources. */
 @Command(name = "wallet-pki", mixinStandardHelpOptions = true, version = "wallet-pki 0.1.0",
-    description = "Maintain wallet PKI for ecosystem and sandbox deployments.")
+    description = "Maintain certificates and signed documents for wallet participants.")
 public final class WalletPkiCli {
   private final CommandLine commandLine;
 
@@ -40,17 +39,9 @@ public final class WalletPkiCli {
 
   public WalletPkiCli(SecretResolver secrets, Clock clock, PrintWriter out, PrintWriter err) {
     commandLine = new CommandLine(this);
-    for (String workflow : List.of("ecosystem", "sandbox")) {
-      var group =
-          new CommandLine(CommandSpec.create().name(workflow).mixinStandardHelpOptions(true));
-      group.getCommandSpec().usageMessage().description(workflow.equals("ecosystem")
-          ? "Provision the complete local ecosystem; managed development roots are allowed."
-          : "Provision configured sandbox roles using supplied authorities and CRLs.");
-      for (Operation operation : Operation.values()) {
-        group.addSubcommand(operation.name().toLowerCase(java.util.Locale.ROOT),
-            new RoleCommand(workflow, operation, secrets, clock));
-      }
-      commandLine.addSubcommand(workflow, group);
+    for (Operation operation : Operation.values()) {
+      commandLine.addSubcommand(operation.name().toLowerCase(java.util.Locale.ROOT),
+          new RoleCommand(operation, new WalletProvisioner(secrets, clock)));
     }
     commandLine.addSubcommand("help", new CommandLine.HelpCommand());
     if (out != null) {
@@ -85,24 +76,18 @@ public final class WalletPkiCli {
             + "verifier-registration, trust-source. "
             + "Defaults to configured roles for ensure/verify.")
     private List<String> roles = new ArrayList<>();
-    private final String workflow;
     private final Operation operation;
-    private final SecretResolver secrets;
-    private final Clock clock;
+    private final WalletProvisioner provisioner;
 
-    RoleCommand(String workflow, Operation operation, SecretResolver secrets, Clock clock) {
-      this.workflow = workflow;
+    RoleCommand(Operation operation, WalletProvisioner provisioner) {
       this.operation = operation;
-      this.secrets = secrets;
-      this.clock = clock;
+      this.provisioner = provisioner;
     }
 
     @Override
     public Integer call() {
       try {
-        ProvisioningReport report = workflow.equals("ecosystem")
-            ? new EcosystemProvisioner(secrets, clock).run(configuration, operation, roles)
-            : new SandboxProvisioner(secrets, clock).run(configuration, operation, roles);
+        ProvisioningReport report = provisioner.run(configuration, operation, roles);
         if (json) {
           spec.commandLine().getOut().println(ArtifactStore.JSON.writeValueAsString(Map.of(
               "environment", report.environment(), "generation", report.generation(),

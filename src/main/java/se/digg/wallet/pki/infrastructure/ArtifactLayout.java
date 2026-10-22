@@ -7,8 +7,8 @@ package se.digg.wallet.pki.infrastructure;
 import java.nio.file.Path;
 import se.digg.wallet.pki.domain.WalletRole;
 
-/** Fixed paths used by the wallet consumers in both deployment workflows. */
-public record EcosystemLayout(Path state, Path output) {
+/** Fixed artifact paths for wallet-role consumers. */
+public record ArtifactLayout(Path state, Path output) {
   public Path authority(WalletRole role) {
     return state.resolve("authorities/" + role.directory());
   }

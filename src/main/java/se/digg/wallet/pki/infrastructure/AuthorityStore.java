@@ -29,7 +29,7 @@ public final class AuthorityStore {
     manager = new CertificateAuthorityManager(keys, new SecureRandom(), clock);
   }
 
-  public CertificateAuthority load(WalletRole role, EcosystemLayout layout) {
+  public CertificateAuthority load(WalletRole role, ArtifactLayout layout) {
     AuthorityConfig source = config.authority(role);
     Path certificate = source.source() == AuthorityConfig.Source.EXISTING
         ? Path.of(source.certificateFile())
@@ -61,9 +61,9 @@ public final class AuthorityStore {
     return new CertificateAuthority(role.directory(), pair, root, revocations);
   }
 
-  public CertificateAuthority create(WalletRole role, EcosystemLayout layout) {
+  public CertificateAuthority create(WalletRole role, ArtifactLayout layout) {
     if (config.authority(role).source() != AuthorityConfig.Source.MANAGED) {
-      throw new PkiConfigurationException("Only ecosystem managed authorities can be created");
+      throw new PkiConfigurationException("Only explicitly managed authorities can be created");
     }
     var root = manager.createAuthority(role.directory(), config.authority(role).commonName(),
         config.organization());
@@ -76,7 +76,7 @@ public final class AuthorityStore {
     return root;
   }
 
-  public X509Certificate publicCertificate(WalletRole role, EcosystemLayout layout,
+  public X509Certificate publicCertificate(WalletRole role, ArtifactLayout layout,
       String supplied) {
     if (supplied == null && !config.configuredRoles().contains(role)) {
       throw new PkiConfigurationException("LoTE requires certificateFile for " + role.argument());
@@ -90,7 +90,7 @@ public final class AuthorityStore {
     return certificate;
   }
 
-  public void publish(WalletRole role, CertificateAuthority ca, EcosystemLayout layout) {
+  public void publish(WalletRole role, CertificateAuthority ca, ArtifactLayout layout) {
     var writer = new ArtifactWriter();
     writer.pem(layout.authority(role).resolve("ca.pem"), ca.certificate());
     writer.pem(layout.authority(role).resolve("revocation-list.pem"), ca.crl());
@@ -101,7 +101,7 @@ public final class AuthorityStore {
     }
   }
 
-  public void verifyPublished(WalletRole role, CertificateAuthority ca, EcosystemLayout layout)
+  public void verifyPublished(WalletRole role, CertificateAuthority ca, ArtifactLayout layout)
       throws Exception {
     for (Path path : java.util.List.of(layout.authority(role).resolve("ca.pem"),
         layout.publication(role).resolve("ca.pem"))) {

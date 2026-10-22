@@ -22,12 +22,14 @@ import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
 import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.SigningIdentity;
+import se.digg.wallet.pki.infrastructure.ArtifactLayout;
 import se.digg.wallet.pki.infrastructure.ArtifactWriter;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Typed registration payloads. Only protocol field names and fixed ecosystem routes live here. */
+/**
+ * Typed registration payloads. Only protocol field names and fixed registration routes live here.
+ */
 public final class RegistrationDocuments {
   private final Clock clock;
 
@@ -40,7 +42,7 @@ public final class RegistrationDocuments {
   private final ArtifactWriter writer = new ArtifactWriter();
 
   public void writePidIssuer(PidIssuerConfig.Registration config, SigningIdentity identity,
-      EcosystemLayout layout) {
+      ArtifactLayout layout) {
     var payload = pidPayload(config, identity.certificate(), clock.instant().getEpochSecond());
     String token = signer.signJws(json.writeValueAsString(payload), identity.keyPair().getPrivate(),
         identity.certificate(), "rc-wrp+jwt");
@@ -55,7 +57,7 @@ public final class RegistrationDocuments {
   }
 
   public void writeVerifier(VerifierRegistrationConfig config, Organization organization,
-      SigningIdentity identity, CertificateAuthority authority, EcosystemLayout layout) {
+      SigningIdentity identity, CertificateAuthority authority, ArtifactLayout layout) {
     var payload = verifierPayload(config, organization, identity.certificate(),
         clock.instant().getEpochSecond());
     String token = signer.signJws(json.writeValueAsString(payload), identity.keyPair().getPrivate(),
@@ -97,14 +99,14 @@ public final class RegistrationDocuments {
   }
 
   public void verifyPid(PidIssuerConfig.Registration config, X509Certificate certificate,
-      EcosystemLayout layout) throws Exception {
+      ArtifactLayout layout) throws Exception {
     var payload = verifyToken(layout.pidRegistration(), List.of(certificate), "rc-wrp+jwt");
     requirePayload(pidPayload(config, certificate, payload.path("iat").asLong()), payload);
   }
 
   public void verifyVerifier(VerifierRegistrationConfig config, Organization organization,
       X509Certificate certificate,
-      CertificateAuthority authority, EcosystemLayout layout) throws Exception {
+      CertificateAuthority authority, ArtifactLayout layout) throws Exception {
     var payload = verifyToken(layout.verifierRegistration(),
         List.of(certificate, authority.certificate()), "rc-wrp+jwt");
     requirePayload(verifierPayload(config, organization, certificate, payload.path("iat").asLong()),

@@ -20,19 +20,19 @@ import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 import se.digg.wallet.pki.domain.WalletRole;
 import se.digg.wallet.pki.domain.WalletTrustAnchors;
+import se.digg.wallet.pki.infrastructure.ArtifactLayout;
 import se.digg.wallet.pki.infrastructure.ArtifactWriter;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 import se.digg.wallet.pki.storage.ArtifactStore;
 import se.digg.wallet.pki.trustlist.LoteGenerator;
 import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 import se.digg.wallet.pki.trustlist.StatusListGenerator;
 
-/** A dedicated signer owns the four-role LoTE and the sandbox's all-valid status list. */
+/** A dedicated signer owns the four-role LoTE and an all-valid test status list. */
 final class TrustSourceFlow {
   static void provision(PkiConfiguration config, CertificateAuthority ca,
       WalletTrustAnchors anchors,
-      EcosystemLayout layout, Clock clock, char[] password, boolean issue, boolean rotate)
+      ArtifactLayout layout, Clock clock, char[] password, boolean issue, boolean rotate)
       throws Exception {
     var stores = new IdentityStores(clock);
     if (issue) {
@@ -65,7 +65,7 @@ final class TrustSourceFlow {
         Duration.between(now, expiry(status.validityDays(), identity.certificate(), now))));
   }
 
-  static Instant documentsExpiry(EcosystemLayout layout) throws Exception {
+  static Instant documentsExpiry(ArtifactLayout layout) throws Exception {
     Instant lote = Instant.parse(lotePayload(layout).path("LoTE").path("ListAndSchemeInformation")
         .path("NextUpdate").asText());
     Instant status = RegistrationDocuments.expiresAt(layout.statusList());
@@ -74,7 +74,7 @@ final class TrustSourceFlow {
 
   static void verify(PkiConfiguration config, WalletTrustAnchors anchors,
       java.security.cert.X509Certificate certificate,
-      EcosystemLayout layout, Clock clock) throws Exception {
+      ArtifactLayout layout, Clock clock) throws Exception {
     var verifier = new RegistrationDocuments(clock);
     var payload = verifier.verifyToken(layout.lote(), List.of(certificate), "trustlist+jwt");
     var info = payload.path("LoTE").path("ListAndSchemeInformation");
@@ -106,7 +106,7 @@ final class TrustSourceFlow {
         : end;
   }
 
-  private static tools.jackson.databind.JsonNode lotePayload(EcosystemLayout layout)
+  private static tools.jackson.databind.JsonNode lotePayload(ArtifactLayout layout)
       throws Exception {
     return ArtifactStore.JSON
         .readTree(JWSObject.parse(Files.readString(layout.lote())).getPayload().toString());

@@ -24,7 +24,7 @@ import se.digg.wallet.pki.config.SecretResolver;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.domain.WalletRole;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
+import se.digg.wallet.pki.infrastructure.ArtifactLayout;
 import se.digg.wallet.pki.storage.ArtifactStore;
 
 class WalletPkiCliComponentTest {
@@ -38,7 +38,7 @@ class WalletPkiCliComponentTest {
   }
 
   private Result run(String operation, String... roles) {
-    return TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ecosystem", operation,
+    return TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, operation,
         source, roles);
   }
 
@@ -48,13 +48,13 @@ class WalletPkiCliComponentTest {
     return result;
   }
 
-  private EcosystemLayout layout(Result result) {
-    return new EcosystemLayout(directory.resolve("state/generations/" + result.generation()),
+  private ArtifactLayout layout(Result result) {
+    return new ArtifactLayout(directory.resolve("state/generations/" + result.generation()),
         result.bundle());
   }
 
   @Test
-  void ecosystem_creates_the_fixed_consumer_keystores() throws Exception {
+  void configured_roles_create_the_fixed_consumer_keystores() throws Exception {
     var result = ensure();
     var layout = layout(result);
     for (WalletRole role : WalletRole.values()) {
@@ -158,7 +158,7 @@ class WalletPkiCliComponentTest {
     Clock later =
         Clock.fixed(TestEnvironment.CLOCK.instant().plus(Duration.ofDays(340)), ZoneOffset.UTC);
 
-    var second = TestEnvironment.run(new SecretResolver(), later, "ecosystem", "ensure", source);
+    var second = TestEnvironment.run(new SecretResolver(), later, "ensure", source);
 
     assertThat(second.code()).withFailMessage(second.errors()).isZero();
     for (WalletRole role : WalletRole.values()) {
@@ -246,65 +246,44 @@ class WalletPkiCliComponentTest {
   }
 
   @Test
-  void sandbox_can_provision_only_the_wallet_provider() throws Exception {
+  void supplied_authorities_allow_provisioning_one_wallet_role() throws Exception {
     final var local = ensure();
-    var sandbox = TestEnvironment.sandbox(directory, source, local.generation());
+    var imported = TestEnvironment.importedWalletProvider(directory, source, local.generation());
 
-    var result = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox",
-        "ensure", sandbox, "wallet-provider");
+    var result = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure",
+        imported, "wallet-provider");
 
     assertThat(result.code()).withFailMessage(result.errors()).isZero();
     assertThat(result.bundle().resolve("private/certificates/wallet-provider/wallet_provider.p12"))
         .exists();
     assertThat(result.bundle().resolve("private/certificates/issuer/pid_issuer.p12"))
         .doesNotExist();
-    assertThat(directory.resolve("sandbox-state/generations/" + result.generation()
+    assertThat(directory.resolve("imported-state/generations/" + result.generation()
         + "/authorities/wallet-provider/ca_private_key.pem")).doesNotExist();
     assertThat(TestEnvironment
-        .run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox", "verify", sandbox).code())
+        .run(new SecretResolver(), TestEnvironment.CLOCK, "verify", imported).code())
         .isZero();
-  }
-
-  @Test
-  void sandbox_rejects_managed_authorities() {
-    var result = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox",
-        "ensure", source);
-
-    assertThat(result.code()).isEqualTo(1);
-    assertThat(result.errors()).contains("Sandbox requires existing");
-    assertThat(directory.resolve("state")).doesNotExist();
-  }
-
-  @Test
-  void ecosystem_requires_the_complete_participant_configuration() throws Exception {
-    final var local = ensure();
-    var sandbox = TestEnvironment.sandbox(directory, source, local.generation());
-
-    var result = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ecosystem",
-        "ensure", sandbox);
-
-    assertThat(result.code()).isEqualTo(1);
-    assertThat(result.errors()).contains("Ecosystem requires");
   }
 
   @Test
   void imported_trust_anchors_are_pinned_after_first_use() throws Exception {
     final var local = ensure();
-    var sandbox = TestEnvironment.sandbox(directory, source, local.generation());
-    var first = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox",
-        "ensure", sandbox);
+    var imported = TestEnvironment.importedWalletProvider(directory, source, local.generation());
+    var first =
+        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
     assertThat(first.code()).withFailMessage(first.errors()).isZero();
     var manager = new CertificateAuthorityManager(new EcKeyGenerator(),
         new java.security.SecureRandom(), TestEnvironment.CLOCK);
     manager.saveAuthority(manager.createAuthority("wallet-provider", "Replacement root"),
         directory.resolve("imports"));
 
-    var changed = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox",
-        "ensure", sandbox);
+    var changed =
+        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
 
     assertThat(changed.code()).isEqualTo(1);
     assertThat(changed.errors()).contains("Trust anchor changed");
-    assertThat(directory.resolve("sandbox-bundles/current").toRealPath()).isEqualTo(first.bundle());
+    assertThat(directory.resolve("imported-bundles/current").toRealPath())
+        .isEqualTo(first.bundle());
   }
 
   @Test
@@ -333,17 +312,17 @@ class WalletPkiCliComponentTest {
   }
 
   @Test
-  void sandbox_trust_source_uses_only_public_participant_authorities() throws Exception {
+  void trust_source_uses_only_public_participant_authorities() throws Exception {
     final var local = ensure();
-    var sandbox = TestEnvironment.trustSandbox(directory, source, local.generation());
+    var imported = TestEnvironment.importedTrustSource(directory, source, local.generation());
     for (WalletRole role : WalletRole.values()) {
       if (role != WalletRole.TRUST_SOURCE) {
         Files.delete(layout(local).authority(role).resolve("ca_private_key.pem"));
       }
     }
 
-    var result = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox",
-        "ensure", sandbox);
+    var result =
+        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
 
     assertThat(result.code()).withFailMessage(result.errors()).isZero();
     assertThat(result.bundle().resolve("public/trust-source/signed/trusted-entities.json"))
@@ -351,16 +330,16 @@ class WalletPkiCliComponentTest {
     assertThat(result.bundle().resolve("private/certificates/issuer/pid_issuer.p12"))
         .doesNotExist();
     assertThat(TestEnvironment
-        .run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox", "verify", sandbox).code())
+        .run(new SecretResolver(), TestEnvironment.CLOCK, "verify", imported).code())
         .isZero();
   }
 
   @Test
   void supplied_crls_preserve_revocation_entries_without_reissuing_keys() throws Exception {
     final var local = ensure();
-    var sandbox = TestEnvironment.sandbox(directory, source, local.generation());
-    var first = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox",
-        "ensure", sandbox);
+    var imported = TestEnvironment.importedWalletProvider(directory, source, local.generation());
+    var first =
+        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
     assertThat(first.code()).withFailMessage(first.errors()).isZero();
     var keys = new EcKeyGenerator();
     var manager = new CertificateAuthorityManager();
@@ -378,8 +357,8 @@ class WalletPkiCliComponentTest {
     keys.writePemFile(crl, directory.resolve("imports/revocation-list.pem"));
     Files.delete(directory.resolve("password.txt"));
 
-    var result = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "sandbox",
-        "ensure", sandbox);
+    var result =
+        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
 
     assertThat(result.code()).withFailMessage(result.errors()).isZero();
     var published = manager.readCrlPem(
@@ -393,8 +372,7 @@ class WalletPkiCliComponentTest {
   @Test
   void concurrent_state_writers_are_rejected() throws Exception {
     final var first = ensure();
-    var store = new ArtifactStore(new se.digg.wallet.pki.config.ConfigurationLoader().load(source),
-        "ecosystem");
+    var store = new ArtifactStore(new se.digg.wallet.pki.config.ConfigurationLoader().load(source));
     try (var lock = store.lock()) {
       assertThat(lock.lock().isValid()).isTrue();
 
@@ -453,7 +431,7 @@ class WalletPkiCliComponentTest {
     Clock later =
         Clock.fixed(TestEnvironment.CLOCK.instant().plus(Duration.ofDays(830)), ZoneOffset.UTC);
 
-    var result = TestEnvironment.run(new SecretResolver(), later, "ecosystem", "ensure", source);
+    var result = TestEnvironment.run(new SecretResolver(), later, "ensure", source);
 
     assertThat(result.code()).withFailMessage(result.errors()).isZero();
     for (WalletRole role : WalletRole.values()) {
@@ -462,6 +440,70 @@ class WalletPkiCliComponentTest {
           .isEqualTo(TestEnvironment.keyStore(layout(first).keystore(role))
               .getCertificate(role.alias()).getPublicKey());
     }
+  }
+
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"alpha", "beta"})
+  void managed_single_role_provisioning_is_independent_of_deployment_labels(String label)
+      throws Exception {
+    var full = new se.digg.wallet.pki.config.ConfigurationLoader().load(source);
+    var single = new se.digg.wallet.pki.config.PkiConfiguration(2, label,
+        full.stateDirectory(), full.outputDirectory(), full.publicationBaseUrl(),
+        full.organization(),
+        null, full.walletProvider(), null, null);
+    Files.writeString(source, ArtifactStore.JSON.writeValueAsString(single));
+
+    var result = run("ensure");
+
+    assertThat(result.code()).withFailMessage(result.errors()).isZero();
+    assertThat(layout(result).walletKeystore()).exists();
+    assertThat(layout(result).pidKeystore()).doesNotExist();
+    assertThat(layout(result).authority(WalletRole.WALLET_PROVIDER).resolve("ca_private_key.pem"))
+        .exists();
+    assertThat(run("verify").code()).isZero();
+  }
+
+  @Test
+  void missing_supplied_private_keys_never_create_replacement_authorities() throws Exception {
+    var local = ensure();
+    var imported = TestEnvironment.importedWalletProvider(directory, source, local.generation());
+    Files.delete(directory.resolve("imports/ca_private_key.pem"));
+
+    var result =
+        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
+
+    assertThat(result.code()).isEqualTo(1);
+    assertThat(directory.resolve("imported-state")).doesNotExist();
+    assertThat(directory.resolve("imported-bundles")).doesNotExist();
+  }
+
+  @Test
+  void legacy_manifest_metadata_preserves_the_committed_generation() throws Exception {
+    var first = ensure();
+    var manifest = (tools.jackson.databind.node.ObjectNode) ArtifactStore.JSON.readTree(
+        Files.readString(first.bundle().resolve("manifest.json")));
+    manifest.put("workflow", "legacy-mode");
+    String contents = ArtifactStore.JSON.writeValueAsString(manifest);
+    Files.writeString(first.bundle().resolve("manifest.json"), contents);
+    Files.writeString(layout(first).state().resolve("manifest.json"), contents);
+
+    var result = run("ensure");
+
+    assertThat(result.code()).withFailMessage(result.errors()).isZero();
+    assertThat(result.generation()).isEqualTo(first.generation());
+    assertThat(run("verify").code()).isZero();
+  }
+
+  @Test
+  void help_exposes_wallet_operations_directly() {
+    var output = new java.io.StringWriter();
+    var cli = new WalletPkiCli(new java.io.PrintWriter(output),
+        new java.io.PrintWriter(new java.io.StringWriter()));
+
+    int result = cli.execute("--help");
+
+    assertThat(result).isZero();
+    assertThat(output.toString()).contains("ensure", "renew", "rotate", "verify");
   }
 
   private int loteSequence(Result result) throws Exception {

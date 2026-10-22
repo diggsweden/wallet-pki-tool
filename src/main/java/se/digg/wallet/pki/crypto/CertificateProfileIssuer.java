@@ -54,7 +54,7 @@ import se.digg.wallet.pki.domain.CertificateSubject;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 /**
- * Issues service certificates according to the configured profiles for the wallet ecosystem.
+ * Issues service certificates according to the configured profiles for the wallet participants.
  */
 public class CertificateProfileIssuer {
 

@@ -3,10 +3,10 @@
 # SPDX-License-Identifier: CC0-1.0
 
 schemaVersion: 2
-environment: sandbox
-stateDirectory: ../.wallet-pki/sandbox/state
-outputDirectory: ../.wallet-pki/sandbox/bundles
-publicationBaseUrl: https://trust.sandbox.example.test
+environment: shared-test
+stateDirectory: ../.wallet-pki/shared-test/state
+outputDirectory: ../.wallet-pki/shared-test/bundles
+publicationBaseUrl: https://trust.example.test
 
 organization:
   name: DIGG
@@ -20,8 +20,8 @@ walletProvider:
     privateKeyFile: /run/secrets/wallet-pki/wallet-provider/ca_private_key.pem
     crlFile: /run/secrets/wallet-pki/wallet-provider/revocation-list.pem
   signing:
-    commonName: Wallet Provider (Sandbox)
+    commonName: Wallet Provider (Test)
     subjectAlternativeNames:
-      dns: [wallet-provider.sandbox.example.test]
+      dns: [wallet-provider.example.test]
   keystorePassword:
     file: /run/secrets/wallet-pki/wallet-provider/keystore-password

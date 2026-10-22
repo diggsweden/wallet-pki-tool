@@ -35,13 +35,11 @@ public final class ArtifactStore {
   private final Path state;
   private final Path output;
   private final String environment;
-  private final String workflow;
 
-  public ArtifactStore(PkiConfiguration configuration, String workflow) {
+  public ArtifactStore(PkiConfiguration configuration) {
     state = Path.of(configuration.stateDirectory());
     output = Path.of(configuration.outputDirectory());
     environment = configuration.environment();
-    this.workflow = workflow;
     rejectSymlinks(state);
     rejectSymlinks(output);
   }
@@ -52,7 +50,8 @@ public final class ArtifactStore {
   }
 
 
-  public record Manifest(int schemaVersion, String workflow, String environment,
+  @com.fasterxml.jackson.annotation.JsonIgnoreProperties("workflow")
+  public record Manifest(int schemaVersion, String environment,
       String generation, String createdAt, Map<WalletRole, RoleState> roles,
       Map<WalletRole, String> authorityPins, Map<String, String> files,
       Map<String, String> stateFiles) {
@@ -109,8 +108,7 @@ public final class ArtifactStore {
         throw new PkiConfigurationException("State and bundle manifests disagree");
       }
       Manifest manifest = JSON.readValue(manifestBytes, Manifest.class);
-      if (manifest.schemaVersion() != 2 || !workflow.equals(manifest.workflow())
-          || !environment.equals(manifest.environment())
+      if (manifest.schemaVersion() != 2 || !environment.equals(manifest.environment())
           || !manifest.generation().equals(target.getFileName().toString())) {
         throw new PkiConfigurationException("Committed state belongs to another environment");
       }

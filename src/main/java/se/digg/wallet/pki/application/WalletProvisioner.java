@@ -15,14 +15,15 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import se.digg.wallet.pki.config.AuthorityConfig;
+import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.PkiConfigurationException;
 import se.digg.wallet.pki.config.SecretResolver;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.domain.WalletRole;
 import se.digg.wallet.pki.domain.WalletTrustAnchors;
+import se.digg.wallet.pki.infrastructure.ArtifactLayout;
 import se.digg.wallet.pki.infrastructure.AuthorityStore;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 import se.digg.wallet.pki.storage.ArtifactStore;
 import se.digg.wallet.pki.storage.ArtifactStore.Manifest;
@@ -31,24 +32,28 @@ import se.digg.wallet.pki.storage.ArtifactStore.Snapshot;
 import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 
 /** Executes the five named flows in an isolated generation under one writer lock. */
-final class WalletProvisioner {
+public final class WalletProvisioner {
   private static final Duration RENEW_BEFORE = Duration.ofDays(30);
   private final SecretResolver secrets;
   private final Clock clock;
 
-  WalletProvisioner(SecretResolver secrets, Clock clock) {
+  public WalletProvisioner(SecretResolver secrets, Clock clock) {
     this.secrets = secrets;
     this.clock = clock;
   }
 
-  ProvisioningReport run(PkiConfiguration config, String workflow, Operation operation,
+  public ProvisioningReport run(Path source, Operation operation, List<String> arguments) {
+    return provision(new ConfigurationLoader().load(source), operation, arguments);
+  }
+
+  private ProvisioningReport provision(PkiConfiguration config, Operation operation,
       List<String> arguments) {
     var selected = WalletRole.select(arguments, config.configuredRoles());
     require(operation != Operation.ROTATE && operation != Operation.RENEW || !arguments.isEmpty(),
         "Renewal and rotation require explicit wallet roles");
     var passwords = new EnumMap<WalletRole, char[]>(WalletRole.class);
     try {
-      var store = new ArtifactStore(config, workflow);
+      var store = new ArtifactStore(config);
       Snapshot current = store.current();
       if (current != null) {
         ArtifactStore.verify(current);
@@ -62,8 +67,8 @@ final class WalletProvisioner {
       var loaded = new EnumMap<WalletRole, CertificateAuthority>(WalletRole.class);
       var authorities = new AuthorityStore(config, clock);
       var before = current == null
-          ? new EcosystemLayout(Path.of(config.stateDirectory()), Path.of(config.outputDirectory()))
-          : new EcosystemLayout(current.state(), current.bundle());
+          ? new ArtifactLayout(Path.of(config.stateDirectory()), Path.of(config.outputDirectory()))
+          : new ArtifactLayout(current.state(), current.bundle());
       boolean publicationChanged = false;
       for (WalletRole role : selected) {
         AuthorityConfig authority = config.authority(role);
@@ -81,8 +86,10 @@ final class WalletProvisioner {
             publicationChanged |= !Arrays.equals(saved.getEncoded(), ca.crl().getEncoded());
           }
         } else {
-          require(workflow.equals("ecosystem") && operation == Operation.ENSURE,
-              "Missing authority for " + role.argument() + "; initialize through ecosystem ensure");
+          require(
+              authority.source() == AuthorityConfig.Source.MANAGED && operation == Operation.ENSURE,
+              "Missing authority for " + role.argument()
+                  + "; configure a managed source and run ensure");
           require(!Files.exists(before.authority(role)),
               "Untracked authority material exists; restore its state instead of replacing it");
         }
@@ -141,7 +148,7 @@ final class WalletProvisioner {
           return report(config, current, actions);
         }
         try (var staging = store.begin(current)) {
-          var layout = new EcosystemLayout(staging.state(), staging.bundle());
+          var layout = new ArtifactLayout(staging.state(), staging.bundle());
           var states = new EnumMap<WalletRole, RoleState>(WalletRole.class);
           states.putAll(previous);
           for (WalletRole role : selected) {
@@ -205,7 +212,7 @@ final class WalletProvisioner {
             }
           }
           verify(config, selected, loaded, anchors, layout, passwords);
-          var manifest = new Manifest(2, workflow, config.environment(), staging.generation(),
+          var manifest = new Manifest(2, config.environment(), staging.generation(),
               clock.instant().toString(),
               states, pins, ArtifactStore.hashes(staging.bundle()),
               ArtifactStore.hashes(staging.state()));
@@ -227,7 +234,7 @@ final class WalletProvisioner {
 
   private void verify(PkiConfiguration config, EnumSet<WalletRole> selected,
       Map<WalletRole, CertificateAuthority> authorities, WalletTrustAnchors anchors,
-      EcosystemLayout layout,
+      ArtifactLayout layout,
       Map<WalletRole, char[]> passwords) throws Exception {
     var stores = new IdentityStores(clock);
     var documents = new RegistrationDocuments(clock);
@@ -257,7 +264,7 @@ final class WalletProvisioner {
   }
 
   private WalletTrustAnchors anchors(PkiConfiguration config, AuthorityStore store,
-      EcosystemLayout layout) {
+      ArtifactLayout layout) {
     var a = config.trustSource().lote().trustedAuthorities();
     return new WalletTrustAnchors(
         store.publicCertificate(WalletRole.PID_ISSUER, layout, a.pidIssuer().certificateFile()),

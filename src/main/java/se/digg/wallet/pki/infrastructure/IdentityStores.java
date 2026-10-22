@@ -56,14 +56,14 @@ public final class IdentityStores {
   }
 
   public void write(WalletRole role, SigningIdentity identity, CertificateAuthority ca,
-      EcosystemLayout layout, char[] password) throws Exception {
+      ArtifactLayout layout, char[] password) throws Exception {
     KeyStore store = stores.createSingleKeyStore(role.alias(), identity.keyPair().getPrivate(),
         identity.certificate(), ca.certificate(), password);
     save(store, layout.keystore(role), password);
     new ArtifactWriter().pem(layout.certificate(role), identity.certificate());
   }
 
-  public void writePid(PidIssuerMaterial material, EcosystemLayout layout, char[] password)
+  public void writePid(PidIssuerMaterial material, ArtifactLayout layout, char[] password)
       throws Exception {
     KeyStore store = stores.createPkcs12KeyStore();
     add(store, "pid_issuer", material.signing(), material.authority(), password);
@@ -75,7 +75,7 @@ public final class IdentityStores {
   }
 
   public X509Certificate publicCertificate(WalletRole role, CertificateAuthority ca,
-      EcosystemLayout layout) throws Exception {
+      ArtifactLayout layout) throws Exception {
     X509Certificate certificate =
         new CertificateAuthorityManager().readCertificatePem(layout.certificate(role));
     certificate.checkValidity(Date.from(clock.instant()));
@@ -87,7 +87,7 @@ public final class IdentityStores {
     return certificate;
   }
 
-  public void verify(WalletRole role, CertificateAuthority ca, EcosystemLayout layout,
+  public void verify(WalletRole role, CertificateAuthority ca, ArtifactLayout layout,
       char[] password) throws Exception {
     KeyStore store = stores.loadKeyStore(layout.keystore(role), password);
     Set<String> expected = role == WalletRole.PID_ISSUER

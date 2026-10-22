@@ -32,17 +32,18 @@ public final class TestEnvironment {
 
   public static Path create(Path directory) throws Exception {
     Files.writeString(directory.resolve("password.txt"), PASSWORD + "\n");
-    String yaml = Files.readString(Path.of("examples/ecosystem.yaml"))
+    String yaml = Files.readString(Path.of("examples/managed-authorities.yaml"))
         .replace("../.wallet-pki/local/state", "state")
         .replace("../.wallet-pki/local/bundles", "bundles")
         .replaceAll("env: [A-Z_]+", "file: password.txt");
-    Path source = directory.resolve("ecosystem.yaml");
+    Path source = directory.resolve("participants.yaml");
     Files.writeString(source, yaml);
     return source;
   }
 
-  public static Path sandbox(Path directory, Path ecosystem, String generation) throws Exception {
-    PkiConfiguration local = new ConfigurationLoader().load(ecosystem);
+  public static Path importedWalletProvider(Path directory, Path participants, String generation)
+      throws Exception {
+    PkiConfiguration local = new ConfigurationLoader().load(participants);
     var wallet = local.walletProvider();
     Path imported = directory.resolve("imports");
     Files.createDirectories(imported);
@@ -55,24 +56,25 @@ public final class TestEnvironment {
     var authority = new AuthorityConfig(AuthorityConfig.Source.EXISTING, null,
         imported.resolve("ca.pem").toString(), imported.resolve("ca_private_key.pem").toString(),
         imported.resolve("revocation-list.pem").toString());
-    var config = new PkiConfiguration(2, "sandbox", directory.resolve("sandbox-state").toString(),
-        directory.resolve("sandbox-bundles").toString(), "https://trust.sandbox.example.test",
-        local.organization(), null,
-        new WalletProviderConfig(authority, wallet.signing(), wallet.keystorePassword()), null,
-        null);
-    Path path = directory.resolve("sandbox.yaml");
+    var config =
+        new PkiConfiguration(2, "imported-wallet", directory.resolve("imported-state").toString(),
+            directory.resolve("imported-bundles").toString(), "https://trust.imported.example.test",
+            local.organization(), null,
+            new WalletProviderConfig(authority, wallet.signing(), wallet.keystorePassword()), null,
+            null);
+    Path path = directory.resolve("imported.yaml");
     Files.writeString(path, ArtifactStore.JSON.writeValueAsString(config));
     return path;
   }
 
-  public static Path trustSandbox(Path directory, Path ecosystem, String generation)
+  public static Path importedTrustSource(Path directory, Path participants, String generation)
       throws Exception {
-    PkiConfiguration local = new ConfigurationLoader().load(ecosystem);
+    PkiConfiguration local = new ConfigurationLoader().load(participants);
     Path roots = directory.resolve("state/generations/" + generation + "/authorities");
     var trust = local.trustSource();
     var entities = trust.lote().trustedAuthorities();
     var config =
-        new PkiConfiguration(2, "sandbox-trust", directory.resolve("trust-state").toString(),
+        new PkiConfiguration(2, "imported-trust", directory.resolve("trust-state").toString(),
             directory.resolve("trust-bundles").toString(), local.publicationBaseUrl(),
             local.organization(),
             null, null, null, new se.digg.wallet.pki.config.TrustSourceConfig(
@@ -90,7 +92,7 @@ public final class TestEnvironment {
                         publicEntity(entities.verifierRegistration(), roots,
                             WalletRole.VERIFIER_REGISTRATION))),
                 trust.statusList()));
-    Path path = directory.resolve("sandbox-trust.yaml");
+    Path path = directory.resolve("imported-trust.yaml");
     Files.writeString(path, ArtifactStore.JSON.writeValueAsString(config));
     return path;
   }
@@ -103,12 +105,12 @@ public final class TestEnvironment {
         e.streetAddress(), roots.resolve(role.directory() + "/ca.pem").toString());
   }
 
-  public static Result run(SecretResolver secrets, Clock clock, String workflow, String operation,
+  public static Result run(SecretResolver secrets, Clock clock, String operation,
       Path source, String... roles) {
     var output = new StringWriter();
     var errors = new StringWriter();
     var args = new java.util.ArrayList<String>(
-        List.of(workflow, operation, "--config", source.toString(), "--json"));
+        List.of(operation, "--config", source.toString(), "--json"));
     args.addAll(List.of(roles));
     int code = new WalletPkiCli(secrets, clock, new PrintWriter(output), new PrintWriter(errors))
         .execute(args.toArray(String[]::new));

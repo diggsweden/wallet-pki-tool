@@ -12,14 +12,14 @@ import se.digg.wallet.pki.domain.CertificateSubject;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 import se.digg.wallet.pki.domain.WalletRole;
+import se.digg.wallet.pki.infrastructure.ArtifactLayout;
 import se.digg.wallet.pki.infrastructure.ArtifactWriter;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 
 /** Separate verifier access and registration flows retain their own CAs and aliases. */
 final class VerifierFlow {
-  static void access(PkiConfiguration config, CertificateAuthority ca, EcosystemLayout layout,
+  static void access(PkiConfiguration config, CertificateAuthority ca, ArtifactLayout layout,
       Clock clock, char[] password, boolean rotate) throws Exception {
     var stores = new IdentityStores(clock);
     var access = config.verifier().access();
@@ -34,10 +34,10 @@ final class VerifierFlow {
     stores.write(WalletRole.VERIFIER_ACCESS, identity, ca, layout, password);
     new ArtifactWriter().text(layout.publication(WalletRole.VERIFIER_ACCESS).resolve("cps.md"),
         "# DIGG Wallet Environment CPS\n\n"
-            + "Development and sandbox relying party access certificates.\n");
+            + "Test certificate policy for wallet relying party access.\n");
   }
 
-  static void registration(PkiConfiguration config, CertificateAuthority ca, EcosystemLayout layout,
+  static void registration(PkiConfiguration config, CertificateAuthority ca, ArtifactLayout layout,
       Clock clock, char[] password, boolean issue, boolean rotate) throws Exception {
     var stores = new IdentityStores(clock);
     var registration = config.verifier().registration();

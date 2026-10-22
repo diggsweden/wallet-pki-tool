@@ -4,7 +4,7 @@
 
 package se.digg.wallet.pki.domain;
 
-/** The legal entity operating the ecosystem participants. */
+/** The legal entity operating the wallet participants. */
 public record Organization(String name, String country, String identifier) {
   public Organization {
     Checks.text(name, "organization.name");
