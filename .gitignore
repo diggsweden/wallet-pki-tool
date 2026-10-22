@@ -51,3 +51,5 @@ pnpm-debug.log*
 node_modules
 **/megalinter-reports
 src/test/resources/test-signed.xml
+
+.wallet-pki/

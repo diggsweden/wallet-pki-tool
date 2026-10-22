@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+services:
+  refimpl-verifier-backend:
+    userns_mode: keep-id
+    user: "${PKI_UID:?Set PKI_UID}:${PKI_GID:?Set PKI_GID}"
+    env_file: !override
+      - ${PKI_BUNDLE:?Set PKI_BUNDLE to an immutable generation path}/public/certificates/verifier-registration-certificate/registration_certificate.env
+    volumes:
+      - ${PKI_BUNDLE}/private/certificates/verifier-access-certificate/verifier-access-certificate.p12:/opt/common/verifier-access-certificate.p12:ro
+  wallet-provider:
+    userns_mode: keep-id
+    user: "${PKI_UID:?Set PKI_UID}:${PKI_GID:?Set PKI_GID}"
+    volumes:
+      - ${PKI_BUNDLE}/private/certificates/wallet-provider/wallet_provider.p12:/opt/common/wallet_provider.p12:ro
+  pid-issuer:
+    userns_mode: keep-id
+    user: "${PKI_UID:?Set PKI_UID}:${PKI_GID:?Set PKI_GID}"
+    volumes:
+      - ${PKI_BUNDLE}/private/certificates/issuer/pid_issuer.p12:/opt/common/pid_issuer.p12:ro
+      - ${PKI_BUNDLE}/public/pid-issuer/issuer_wrprc.jwt:/opt/common/configtree/issuer.wrprc:ro
+  trust-source:
+    volumes:
+      - ${PKI_BUNDLE}/public/trust-source:/usr/share/nginx/html:ro
+      - ./config/trust-source/assets:/usr/share/nginx/html/assets:ro

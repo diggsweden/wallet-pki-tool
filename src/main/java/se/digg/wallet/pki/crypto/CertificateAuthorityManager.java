@@ -19,6 +19,7 @@ import java.security.cert.CRLException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509CRL;
 import java.security.cert.X509Certificate;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
@@ -60,6 +61,7 @@ public class CertificateAuthorityManager {
 
   private final EcKeyGenerator keyGenerator;
   private final SecureRandom secureRandom;
+  private final Clock clock;
 
   /** Default constructor. */
   public CertificateAuthorityManager() {
@@ -73,8 +75,14 @@ public class CertificateAuthorityManager {
    * @param secureRandom the secure random generator
    */
   public CertificateAuthorityManager(EcKeyGenerator keyGenerator, SecureRandom secureRandom) {
+    this(keyGenerator, secureRandom, Clock.systemUTC());
+  }
+
+  public CertificateAuthorityManager(EcKeyGenerator keyGenerator, SecureRandom secureRandom,
+      Clock clock) {
     this.keyGenerator = Objects.requireNonNull(keyGenerator, "keyGenerator must not be null");
     this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom must not be null");
+    this.clock = Objects.requireNonNull(clock);
   }
 
   /**
@@ -169,7 +177,7 @@ public class CertificateAuthorityManager {
     Objects.requireNonNull(cert, "cert must not be null");
 
     try {
-      cert.checkValidity();
+      cert.checkValidity(Date.from(clock.instant()));
     } catch (CertificateException e) {
       throw new PkiCryptoException("CA certificate is not valid: " + e.getMessage(), e);
     }
@@ -221,7 +229,7 @@ public class CertificateAuthorityManager {
 
       BigInteger serialNumber =
           new BigInteger(64, secureRandom).abs().add(BigInteger.ONE);
-      Instant now = Instant.now().minus(Duration.ofMinutes(5));
+      Instant now = clock.instant().minus(Duration.ofMinutes(5));
       Date notBefore = Date.from(now);
       Date notAfter = Date.from(now.plus(validity));
 
@@ -268,7 +276,7 @@ public class CertificateAuthorityManager {
    */
   public X509CRL generateEmptyCrl(X509Certificate caCert, KeyPair keyPair, Duration validity) {
     try {
-      Instant now = Instant.now().minus(Duration.ofMinutes(5));
+      Instant now = clock.instant().minus(Duration.ofMinutes(5));
       Date thisUpdate = Date.from(now);
       Date nextUpdate = Date.from(now.plus(validity));
 

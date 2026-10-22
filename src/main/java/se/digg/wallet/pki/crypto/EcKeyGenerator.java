@@ -124,6 +124,11 @@ public class EcKeyGenerator {
         Files.createDirectories(parent);
       }
       String pem = toPemString(privateKey);
+      if (!Files.exists(outputPath)
+          && FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+        Files.createFile(outputPath,
+            PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+      }
       Files.writeString(outputPath, pem, StandardCharsets.UTF_8);
 
       // Enforce owner-only permissions (0600) on POSIX filesystems to protect private keys

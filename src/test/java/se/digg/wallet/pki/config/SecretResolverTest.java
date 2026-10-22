@@ -17,6 +17,17 @@ import org.junit.jupiter.api.io.TempDir;
 class SecretResolverTest {
 
   @Test
+  void password_files_preserve_spaces_and_remove_line_endings(@TempDir Path tempDir)
+      throws IOException {
+    Path secretFile = tempDir.resolve("secret.txt");
+    Files.writeString(secretFile, " password with spaces \r\n");
+
+    char[] resolved = new SecretResolver().resolve(null, secretFile.toString());
+
+    assertThat(resolved).isEqualTo(" password with spaces ".toCharArray());
+  }
+
+  @Test
   void shouldResolvePasswordFromEnvironmentVariable() {
     // 1. Mock environment variable provider
     Map<String, String> mockEnv = Map.of("MY_SECRET_PASS", "super-secret-123");

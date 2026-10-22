@@ -1,300 +1,157 @@
-# Wallet PKI Tool (`wallet-pki-tool`)
+# Wallet PKI Tool
 
-[![License](https://img.shields.io/badge/License-CC0_1.0-blue.svg)](LICENSES/CC0-1.0.txt)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/diggsweden/wallet-pki-tool/badge)](https://securityscorecards.dev/viewer/?uri=github.com/diggsweden/wallet-pki-tool)
+`wallet-pki-tool` plans, maintains, and verifies the certificates, keystores, and signed documents used by a wallet environment. It runs as a Java 25 CLI or a container.
 
-`wallet-pki-tool` is a dedicated command-line interface (CLI) for automating certificate, keystore (`.p12`), and List of Trusted Entities (LoTE) generation across the European Digital Identity (EUDI) Wallet ecosystem.
+The configuration describes authorities, identities, documents, truststores, and consumer exports separately. The tool preserves valid existing material, resolves dependencies during renewal and rotation, and publishes a verified generation through one atomic `current` pointer.
 
-It replaces fragile and complex bash scripts with a strongly typed, unit-tested Java engine driven by declarative YAML configurations.
-
----
-
-## Key Features
-
-* **Declarative EUDI Model:** Driven by clean, human-readable YAML configurations without cryptic OpenSSL syntax.
-* **Standard-Compliant:** Implements EUDI certificate profiles ([ETSI TS 119 411-8](https://www.etsi.org/deliver/etsi_ts/119400_119499/11941108/01.01.01_60/ts_11941108v010101p.pdf), [ETSI TS 119 475](https://www.etsi.org/deliver/etsi_ts/119400_119499/119475/01.02.01_60/ts_119475v010201p.pdf)) and LoTE trust lists ([ETSI TS 119 602](https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/01.01.01_60/ts_119602v010101p.pdf)).
-* **Secure Secret Management:** Passwords and private keys are resolved strictly from environment variables or secret files (no passwords exposed in CLI flags or process tables).
-* **Selective Target Generation:** Allows rotating or regenerating specific certificates without resetting the entire ecosystem.
-* **Automated Licensing:** Produces REUSE-compliant `.license` files for all generated artifacts.
-
----
-
-## Quick Start
-
-Generated PKCS#12 keystores (`.p12`) require encryption passwords to protect their private keys. The YAML configuration specifies which environment variables contain these passwords (via the `passwordEnv` property). Ensure required passwords are set in the environment or available in a `.env` file before executing generation.
-
-`wallet-pki-tool` executes directly inside a container using Podman or Docker (no local Java installation required):
+## Build and run
 
 ```bash
-podman run --rm \
-  --userns=keep-id \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD":/workspace:z \
-  -w /workspace \
-  --env-file .env \
-  ghcr.io/diggsweden/wallet-pki-tool:latest \
-  generate --config ./config/certificates/ecosystem.yaml
+./mvnw clean package
+java -jar target/wallet-pki-tool.jar --help
 ```
 
-To build the container image locally:
+[examples/local.yaml](examples/local.yaml) provides the local ecosystem configuration. Its keystore passwords come from the environment variables named in the file. A container can receive them through `--env-file`; the CLI does not source shell scripts or `.env` files.
+
+Create and inspect a plan before applying it:
 
 ```bash
-podman build -t wallet-pki-tool -f Containerfile .
+java -jar target/wallet-pki-tool.jar plan --config examples/local.yaml --json > plan.json
+java -jar target/wallet-pki-tool.jar apply --plan plan.json
+java -jar target/wallet-pki-tool.jar verify --config examples/local.yaml
 ```
 
----
+Planning reads configuration, certificate metadata, and declared static files. It creates no directories, generates no keys, and resolves no password values. The plan names the required secret references. Applying a saved plan rejects changed configuration, static inputs, or committed generations.
 
-### Selective Target Rotation
-
-Specific target IDs can be passed at the end of the command to selectively regenerate only those artifacts:
+For an operation that plans and applies immediately:
 
 ```bash
-podman run --rm \
-  --userns=keep-id \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD":/workspace:z \
-  -w /workspace \
-  --env-file .env \
-  ghcr.io/diggsweden/wallet-pki-tool:latest \
-  generate --config ./config/certificates/ecosystem.yaml \
-  verifier-access-certificate
+java -jar target/wallet-pki-tool.jar ensure --config examples/local.yaml
+java -jar target/wallet-pki-tool.jar renew --config examples/local.yaml identity:pid-issuer
+java -jar target/wallet-pki-tool.jar rotate --config examples/local.yaml identity:verifier-registration-certificate
 ```
 
-Multiple targets can also be combined:
+Use `--json` for machine-readable plans and reports. Passwords and private keys are excluded from those results.
 
-```bash
-podman run --rm \
-  --userns=keep-id \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD":/workspace:z \
-  -w /workspace \
-  --env-file .env \
-  ghcr.io/diggsweden/wallet-pki-tool:latest \
-  generate --config ./config/certificates/ecosystem.yaml \
-  pid-issuer wallet-provider
+## Lifecycle
+
+| Operation | Behavior |
+| :--- | :--- |
+| `plan` | Describe `ensure` changes, or select `--operation renew` / `--operation rotate` with explicit identity targets. |
+| `apply --plan FILE` | Apply the inspected JSON plan after checking that its inputs are still current. |
+| `ensure` | Initialize a complete environment, reuse valid material, and renew changed or due artifacts. An unchanged environment reuses its generation. |
+| `renew` | Replace certificates while preserving existing identity keys. Explicit identity targets are required. |
+| `rotate` | Replace all keys belonging to the selected identity, then rebuild dependent documents and truststores. |
+| `verify` | Check the committed generation's digests, certificate/key correspondence, chains, roles, signed payloads, and truststores without writing files. |
+
+Targets use qualified references: `authority:ID`, `identity:ID`, `document:ID`, and `truststore:ID`. Initialize the complete environment before selecting individual targets. Changes to unselected configuration must be reconciled with `ensure` first.
+
+Dependencies follow references. Rotating a registration identity rebuilds its registration JWT and exported environment value. A LoTE containing the unchanged issuing CA remains unchanged. Rotating the LoTE signer rebuilds documents signed by that identity.
+
+Authority creation requires explicit `create: true`. Imported authorities require both `keyFile` and `certFile`; missing or mismatched material fails. Existing trust anchors are pinned by certificate fingerprint, including when temporarily removed from configuration. Authority subject changes and replacement trust anchors require a separately coordinated rollover and are rejected by the identity rotation command.
+
+## Configuration schema
+
+Schema version 1 is strict: unknown fields, duplicate YAML keys, unsupported profiles, unresolved references, and conflicting export paths are rejected. Relative paths are resolved against the configuration file, independently of the working directory. State and output directories must be separate and non-nested.
+
+The complete examples are [local.yaml](examples/local.yaml) and [stage.yaml](examples/stage.yaml).
+
+| Field | Responsibility |
+| :--- | :--- |
+| `schemaVersion` | Required; currently `1`. |
+| `environment` | Environment identifier recorded in plans and manifests. |
+| `stateDir` | Persistent private state, including authority keys and encrypted identity stores. |
+| `outputDir` | Versioned consumer bundles and their `current` pointer. |
+| `authorities` | Authority ID, subject, explicit creation/import policy, and optional certificate/CRL publication URLs. |
+| `identities` | Certificate profile, issuing authority, subject, SANs, alias, password reference, validity, and renewal window. |
+| `documents` | Document type, signing identity, validity, and explicit payload inputs. |
+| `trustStores` | Explicit certificate references, consumer aliases, and password reference. |
+| `exports` | Explicit source, format, destination, and optional environment variable name. |
+
+An identity supplies exactly one of `passwordEnv` and `passwordFile`. Password files are read as UTF-8 with trailing line endings removed. Empty passwords are rejected. Passwords remain external to YAML and reports. Keystore and truststore aliases use lowercase letters, digits, underscores, and hyphens to match PKCS12 alias handling.
+
+Supported identity profiles are `pid-issuer-service`, `wallet-provider-service`, `relying-party-access`, `relying-party-registration`, `trust-source-signer`, `encryption`, and `service`. SANs support DNS names, IP literals, and URIs; explicit `DNS:`, `IP:`, and `URI:` prefixes are available. The PID profile owns its signing, nonce-encryption, and request-encryption keys together. Certificate expiry is capped by the issuing authority's expiry.
+
+Identity validity defaults to 825 days; document validity defaults to 365 days. `renewBeforeDays` defines the advance renewal window. Public URLs, relying-party metadata, subjects, and claims belong to environment configuration.
+
+Documents have one of three types:
+
+- `lote`: requires explicit entity references and roles (`pid`, `wallet`, `wrpac`, `wrprc`), scheme name/operator, and territory. Roles are never inferred from certificate names. Its sequence number advances when rebuilt.
+- `registration`: signs configured `claims`; issue and expiry times are calculated by the tool.
+- `status-list`: signs the configured URL and optional compressed `statusBits`. The default is an empty development status list. Configured bits are signed as supplied; this CLI does not maintain a live revocation registry.
+
+Each document's `signer` references an identity, whose certificate chain is embedded in the JWS header. A CA and a document signing identity are distinct resources. Document validity is capped by signer certificate expiry.
+
+## Export bundles
+
+```text
+outputDir/
+  current -> generations/GENERATION
+  generations/GENERATION/
+    manifest.json
+    public/
+      trust-source/
+      pid-issuer/
+      certificates/
+    private/
+      certificates/
 ```
 
----
+Every generation is built in isolated staging directories and verified before publication. The state snapshot is completed before `current` is atomically replaced. Required generation failures preserve the previous current bundle. Concurrent writers are rejected. Filesystems must support symbolic links and atomic renames within each configured root.
 
-## Verifying Generated Artifacts
+The manifest records the tool/configuration version, generation, environment, creation time, resource fingerprints and expiry times, and file digests. `verify` needs the relevant passwords to inspect the encrypted stores. It also checks public artifact contracts and detects altered files.
 
-Once generated, you can inspect and verify the contents of the keystores, certificates, and trust lists using standard tools:
-
-### 1. Inspect Keystores (`.p12`) with Java `keytool`
-
-View certificate aliases, key algorithms (EC P-256), and certificate chain hierarchy:
-
-```bash
-keytool -list -v \
-  -keystore ./config/certificates/issuer/pid_issuer.p12 \
-  -storepass "$PID_ISSUER_KEYSTORE_PASSWORD"
-```
-
-### 2. Inspect Keystores (`.p12`) with `openssl`
-
-Display human-readable certificate details (Subject, Issuer, SANs, and QCStatements):
-
-```bash
-openssl pkcs12 \
-  -in ./config/certificates/issuer/pid_issuer.p12 \
-  -nokeys \
-  -passin env:PID_ISSUER_KEYSTORE_PASSWORD | openssl x509 -text -noout
-```
-
-### 3. Inspect Root CA Certificates (`.pem`)
-
-Verify CA Distinguished Name (DN), validity, and basic constraints:
-
-```bash
-openssl x509 \
-  -in ./config/certificates/ca/pid-issuer-ca/ca.pem \
-  -text -noout
-```
-
-### 4. Inspect Signed Trust List (LoTE JSON)
-
-Format and inspect the trusted entities in the LoTE document:
-
-```bash
-cat ./config/certificates/trust-source/signed/trusted-entities.json | jq .
-```
-
----
-
-## Configuration Reference (YAML)
-
-Configurations define **what** actors exist and **how** they relate to Certificate Authorities. The tool handles standard X.509 extensions, `qcStatements`, KeyUsages, and PKCS#12 formatting automatically.
-
-### Example: `ecosystem.yaml`
-
-```yaml
-environment: local
-outputDir: ./config/certificates
-
-# ---------------------------------------------------------------------------
-# 1. Certificate Authorities (CAs)
-# ---------------------------------------------------------------------------
-authorities:
-  - id: verifier-access-ca
-    commonName: "DIGG Wallet Verifier Access CA"
-  - id: verifier-registration-certificate
-    commonName: "DIGG Wallet Verifier Registration Certificate CA"
-  - id: pid-issuer-ca
-    commonName: "DIGG Wallet PID Issuer CA"
-  - id: wallet-provider-ca
-    commonName: "DIGG Wallet Provider CA"
-  - id: trust-source-ca
-    commonName: "DIGG Wallet Trust Source CA"
-
-# ---------------------------------------------------------------------------
-# 2. Service Certificates & Keystores (.p12)
-# ---------------------------------------------------------------------------
-certificates:
-  # Relying Party Access Certificate (WRPAC - ETSI TS 119 411-8)
-  - id: verifier-access-certificate
-    type: relying-party-access
-    ca: verifier-access-ca
-    keystore: ./verifier-access-certificate/verifier-access-certificate.p12
-    passwordEnv: VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "verifier-backend"
-    tradeName: "DIGG Verifier"
-    country: "SE"
-    organizationIdentifier: "VATSE-12345678"
-
-  # Relying Party Registration Certificate (WRPRC - ETSI TS 119 475)
-  - id: verifier-registration-certificate
-    type: relying-party-registration
-    ca: verifier-registration-certificate
-    keystore: ./verifier-registration-certificate/verifier-registration-certificate.p12
-    passwordEnv: VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "verifier-backend"
-    tradeName: "DIGG Verifier"
-    country: "SE"
-    organizationIdentifier: "VATSE-12345678"
-
-  # PID Issuer Service Certificate & Keystore
-  - id: pid-issuer
-    type: pid-issuer-service
-    ca: pid-issuer-ca
-    keystore: ./issuer/pid_issuer.p12
-    passwordEnv: PID_ISSUER_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "pid-issuer"
-
-  # Wallet Provider Service Certificate & Keystore
-  - id: wallet-provider
-    type: wallet-provider-service
-    ca: wallet-provider-ca
-    keystore: ./wallet-provider/wallet_provider.p12
-    passwordEnv: WALLET_PROVIDER_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "wallet-provider"
-
-# ---------------------------------------------------------------------------
-# 3. Trust Lists & Signed Tokens (LoTE - ETSI TS 119 602 / OAuth Status List)
-# ---------------------------------------------------------------------------
-trustLists:
-  - id: lote
-    type: etsi-119-602-lote
-    signerAuthority: trust-source-ca
-    outputFile: ./trust-source/signed/trusted-entities.json
-    entities:
-      - wallet-provider
-      - pid-issuer
-      - verifier-access-certificate
-      - verifier-registration-certificate
-
-  - id: status-list
-    type: oauth-status-list
-    signerAuthority: trust-source-ca
-    outputFile: ./trust-source/signed/status-list.jwt
-    url: "https://trust.example.se/signed/status-list.jwt"
-```
-
----
-
-## Configuration Fields
-
-### Root Properties
-
-| Property | Type | Description |
+| Export format | Source | Destination |
 | :--- | :--- | :--- |
-| `environment` | `String` | Optional environment identifier (e.g. `local`, `sandbox`, `prod`). |
-| `outputDir` | `String` | Target base directory where generated certificates and keystores are written. |
-| `authorities` | `List` | List of Certificate Authority configurations. |
-| `certificates` | `List` | List of service certificates and PKCS#12 keystores to generate. |
-| `trustLists` | `List` | List of trust lists (such as LoTE) and tokens to compile and sign. |
+| `pkcs12` | Identity or truststore | Under `private/` |
+| `certificate` | Authority or identity | Under `public/` |
+| `crl` | Authority | Under `public/` |
+| `compact` | Signed document | Under `public/` |
+| `env` | Signed document; also requires `variable` | Under `public/` |
+| `json` | Decoded document header and payload | Under `public/` |
+| `file` | Explicit `file:PATH` static input | Under `public/` |
 
-### `authorities` Properties
+The legacy `trusted-entities.json` filename contains compact JWS. Use the separate decoded JSON export for `jq` inspection. Exported artifacts and the manifest receive SPDX `.license` companions.
 
-| Property | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `String` | **Yes** | Unique identifier for the CA referenced by service certificates. |
-| `commonName` | `String` | **Yes** | Subject Common Name (CN) for the CA certificate. |
-| `keyType` | `String` | No | Key algorithm and curve (defaults to `EC_P256`). |
-| `keyFile` | `String` | No | Optional path to existing private key file (for Kubernetes/OpenShift Sealed Secrets). |
-| `certFile` | `String` | No | Optional path to existing CA certificate. |
+Private exports use owner-only file permissions on POSIX filesystems. Authority private keys remain in `stateDir` and are never exported. Keep persistent state available across CI invocations and retain it separately from deployable bundles. Previous generations are retained; retention and coordinated consumer rollout belong to the deployment pipeline.
 
-### `certificates` Properties
+## Local ecosystem integration
 
-| Property | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `String` | **Yes** | Unique identifier for the certificate. |
-| `type` | `String` | No | Profile type (`relying-party-access`, `relying-party-registration`, `pid-issuer-service`, `wallet-provider-service`, `trust-source-signer`, `encryption`). |
-| `ca` | `String` | **Yes** | ID of the authority used to issue this certificate. |
-| `keystore` | `String` | **Yes** | Relative path where the `.p12` keystore should be written. |
-| `alias` | `String` | No | Custom alias for the private key and cert in the `.p12` store (defaults to `id` with hyphens `-` replaced by underscores `_`, e.g. `wallet-provider` -> `wallet_provider`). |
-| `passwordEnv` | `String` | Conditional | Environment variable name containing the keystore password. |
-| `passwordFile` | `String` | Conditional | File path containing the keystore password (alternative to `passwordEnv`). |
-| `sans` | `List<String>` | No | Subject Alternative Names (DNS hostnames, IP addresses, or URIs). |
-| `tradeName` | `String` | No | Trade name for Relying Party certificates. |
-| `country` | `String` | No | Two-letter country code (default: `SE`). |
-| `organizationIdentifier` | `String` | No | Legal entity identifier (e.g. `VATSE-...` or `NTRSE-...`). |
+The local example preserves keystore aliases, registration environment variable names, trust-source paths, and issuer registration files expected by `wallet-ecosystem`.
 
-### `trustLists` Properties
+Use the immutable bundle path printed by `ensure` or `apply`. [examples/compose.override.yaml](examples/compose.override.yaml) maps those outputs into the existing consumers:
 
-| Property | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `String` | **Yes** | Unique identifier for the trust list. |
-| `type` | `String` | No | Trust list format (`etsi-119-602-lote` or `oauth-status-list`, default: `etsi-119-602-lote`). |
-| `signerAuthority` | `String` | **Yes** | Authority ID used to sign the trust list. |
-| `outputFile` | `String` | **Yes** | Output destination path for the signed JSON/JWT. |
-| `url` | `String` | No | Optional issuer URL (`iss`/`sub`) for OAuth Status List JWTs. |
-| `entities` | `List<String>` | No | Optional list of entity/certificate IDs to include in the LoTE. Defaults to auto-discovering wallet-provider and pid-issuer. |
+```bash
+export PKI_BUNDLE=/absolute/path/to/reported/generation
+export PKI_UID="$(id -u)" PKI_GID="$(id -g)"
+cd /path/to/wallet-ecosystem
+podman compose -f docker-compose.yaml -f /path/to/wallet-pki-tool/examples/compose.override.yaml up -d --force-recreate
+```
 
----
+The Podman override requires Compose support for `!override` and maps the current host user into keystore consumers so they can read owner-only private exports. Recreate consumers after switching generations so file mounts and environment values use the same bundle. The override preserves the ecosystem's static trust-source assets. Traefik's mkcert TLS certificate remains managed by the existing local workflow.
 
-## Secret Management
+## Sandbox and stage
 
-To prevent sensitive passwords and private keys from leaking in shell history or process tables (`ps aux`), `wallet-pki-tool` supports two secure resolution mechanisms:
+The stage example uses supplied CA key/certificate files and password files under `/run/secrets/wallet-pki/`. Adjust those mount paths and all example URLs/metadata for the target environment. The tool runs without cluster credentials and produces a versioned bundle for the existing deployment pipeline.
 
-1. **Environment Variables (`passwordEnv`):**  
-   Reads the password from the named environment variable at runtime.
-2. **Secret Files (`passwordFile`):**  
-   Reads the password from a mounted secret file (ideal for OpenShift/Kubernetes Sealed Secrets).
+Use a stable, private state location and a single state/output pair per environment. Publish `public/` through the trust source and deliver the required `private/` files through the established secret-management workflow. Stage preparation must retain the configured trust anchors rather than bootstrap new ones on each CI run.
 
----
+## Migrating the Bash or previous Java configuration
+
+1. Inventory the consumer aliases, signing identities, trust anchors, published URLs, registration claims, and mounted filenames.
+2. Translate these into schema version 1. Legacy `certificates`, `trustLists`, and `signerAuthority` configuration is rejected. `generate` remains an alias for `ensure` using the new schema.
+3. Import existing CA key/certificate pairs explicitly to preserve trust anchors. Existing application keystores are not imported automatically; initial identity issuance creates replacement application keys and requires a coordinated consumer rollout.
+4. Declare every JWT, keystore, truststore, certificate/CRL publication, static input, and environment export. Neighboring directories no longer enable implicit output.
+5. Generate into isolated state/output directories, verify the artifacts, and run ecosystem acceptance tests against those outputs before changing consumers.
+
+Certificate profiles encode this project's expected behavior. Profile changes should be checked against the applicable specifications as well as consumer interoperability tests; the migrated scripts are an artifact inventory rather than a conformance oracle.
 
 ## Development
 
-The project uses [just](https://github.com/casey/just) and [mise](https://mise.jdx.dev/) for local workflow automation:
-
 ```bash
-# Bootstrap tools and dependencies
 just install
-
-# Run linters, formatting, and security audits
-just verify
-
-# Run unit tests
-just test
-
-# Auto-fix formatting issues
 just lint-fix
+just verify
 ```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the module interfaces and verification strategy.

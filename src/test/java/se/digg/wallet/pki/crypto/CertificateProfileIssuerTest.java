@@ -156,19 +156,15 @@ class CertificateProfileIssuerTest {
     ASN1OctetString oct = ASN1OctetString.getInstance(qcBytes);
     ASN1Sequence qcSeq = ASN1Sequence.getInstance(oct.getOctets());
 
-    assertThat(qcSeq.size()).isEqualTo(3);
+    assertThat(qcSeq.size()).isEqualTo(2);
     QCStatement statement0 = QCStatement.getInstance(qcSeq.getObjectAt(0));
     QCStatement statement1 = QCStatement.getInstance(qcSeq.getObjectAt(1));
-    QCStatement statement2 = QCStatement.getInstance(qcSeq.getObjectAt(2));
 
     assertThat(statement0.getStatementId())
         .isEqualTo(ETSIQCObjectIdentifiers.id_etsi_qcs_QcCompliance);
     assertThat(statement1.getStatementId())
         .isEqualTo(ETSIQCObjectIdentifiers.id_etsi_qcs_QcType);
     assertThat(statement1.getStatementInfo().toString()).contains("0.4.0.194126.1.1");
-    assertThat(statement2.getStatementId())
-        .isEqualTo(ETSIQCObjectIdentifiers.id_etsi_qcs_QcType);
-    assertThat(statement2.getStatementInfo().toString()).contains("0.4.0.194126.1.2");
 
     // 4. Verify signature validity against issuing CA
     cert.verify(ca.publicKey());

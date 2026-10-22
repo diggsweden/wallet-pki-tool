@@ -30,6 +30,26 @@ public class SecretResolver {
     this.envProvider = Objects.requireNonNull(envProvider, "envProvider must not be null");
   }
 
+  /** Returns a caller-owned password buffer; values are never included in failures. */
+  public char[] resolve(String passwordEnv, String passwordFile) {
+    String value;
+    if (passwordEnv != null) {
+      value = envProvider.apply(passwordEnv);
+    } else {
+      try {
+        value = Files.readString(Path.of(passwordFile), StandardCharsets.UTF_8)
+            .replaceFirst("[\\r\\n]+$", "");
+      } catch (IOException e) {
+        throw new PkiConfigurationException("Cannot read password file: " + passwordFile, e);
+      }
+    }
+    if (value == null || value.isBlank()) {
+      throw new PkiConfigurationException("Missing or empty secret: "
+          + (passwordEnv == null ? passwordFile : passwordEnv));
+    }
+    return value.toCharArray();
+  }
+
   /**
    * Resolves the keystore password for a certificate configuration.
    *

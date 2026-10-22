@@ -7,87 +7,41 @@ package se.digg.wallet.pki.cli;
 import java.io.PrintWriter;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
-import picocli.CommandLine.IFactory;
-import se.digg.wallet.pki.config.ConfigurationLoader;
-import se.digg.wallet.pki.config.SecretResolver;
+import se.digg.wallet.pki.generator.PkiEngine;
 
-/** Main command-line interface entry point for wallet-pki-tool. */
-@Command(
-    name = "wallet-pki",
-    mixinStandardHelpOptions = true,
-    version = "wallet-pki 0.1.0",
-    description = "PKI, certificate and trust list automation tool for the Digg wallet-ecosystem.",
-    subcommands = {GenerateCommand.class, CommandLine.HelpCommand.class})
-public class WalletPkiCli {
-
+/** Composition root and argument-to-operation adapter. */
+@Command(name = "wallet-pki", mixinStandardHelpOptions = true, version = "wallet-pki 0.1.0",
+    description = "Plan, maintain and verify wallet environment trust artifacts.")
+public final class WalletPkiCli {
   private final CommandLine commandLine;
 
-  /** Default constructor initializing the Picocli command line. */
   public WalletPkiCli() {
-    this(new ConfigurationLoader(), new SecretResolver(), null, null);
+    this(new PkiEngine(), null, null);
   }
 
-  /**
-   * Constructor with explicit output and error writers.
-   *
-   * @param out writer for standard output
-   * @param err writer for standard error
-   */
   public WalletPkiCli(PrintWriter out, PrintWriter err) {
-    this(new ConfigurationLoader(), new SecretResolver(), out, err);
+    this(new PkiEngine(), out, err);
   }
 
-  /**
-   * Constructor with custom dependencies and writers (useful for testing).
-   *
-   * @param configLoader the configuration loader
-   * @param secretResolver the secret resolver
-   * @param out writer for standard output
-   * @param err writer for standard error
-   */
-  @SuppressWarnings("unchecked")
-  public WalletPkiCli(
-      ConfigurationLoader configLoader,
-      SecretResolver secretResolver,
-      PrintWriter out,
-      PrintWriter err) {
-    GenerateCommand generateCommand = new GenerateCommand(configLoader, secretResolver);
-    IFactory customFactory =
-        new IFactory() {
-          @Override
-          public <K> K create(Class<K> cls) throws Exception {
-            if (cls == GenerateCommand.class) {
-              return (K) generateCommand;
-            }
-            return CommandLine.defaultFactory().create(cls);
-          }
-        };
-
-    this.commandLine = new CommandLine(this, customFactory);
+  public WalletPkiCli(PkiEngine engine, PrintWriter out, PrintWriter err) {
+    commandLine = new CommandLine(this);
+    for (String name : java.util.List.of("plan", "apply", "ensure", "renew", "rotate", "verify",
+        "generate")) {
+      commandLine.addSubcommand(name, new ArtifactCommand(engine, name));
+    }
+    commandLine.addSubcommand("help", new CommandLine.HelpCommand());
     if (out != null) {
-      this.commandLine.setOut(out);
+      commandLine.setOut(out);
     }
     if (err != null) {
-      this.commandLine.setErr(err);
+      commandLine.setErr(err);
     }
   }
 
-  /**
-   * Main method entry point.
-   *
-   * @param args command-line arguments
-   */
   public static void main(String[] args) {
-    int exitCode = new WalletPkiCli().execute(args);
-    System.exit(exitCode);
+    System.exit(new WalletPkiCli().execute(args));
   }
 
-  /**
-   * Executes the CLI with the provided arguments without terminating the JVM.
-   *
-   * @param args command-line arguments
-   * @return exit code (0 for success)
-   */
   public int execute(String... args) {
     return commandLine.execute(args);
   }
