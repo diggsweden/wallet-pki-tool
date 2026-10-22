@@ -95,6 +95,14 @@ class ConfigurationLoaderTest {
     assertInvalid(yaml.writeValueAsString(document), "authority");
   }
 
+  @ParameterizedTest
+  @ValueSource(strings = {"../outside.p12", "/absolute.p12", "."})
+  void artifact_paths_must_be_relative_to_the_output_directory(String path) throws Exception {
+    assertInvalid(EcosystemFixture.yaml(directory)
+        .replace("keystoreFile: certificates/issuer/pid_issuer.p12", "keystoreFile: " + path),
+        "relative path");
+  }
+
   @Test
   void duplicate_yaml_fields_are_rejected() throws Exception {
     Path file = directory.resolve("duplicate.yaml");

@@ -4,6 +4,7 @@
 
 package se.digg.wallet.pki.application;
 
+import java.nio.file.Path;
 import se.digg.wallet.pki.config.VerifierConfig;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
@@ -12,7 +13,6 @@ import se.digg.wallet.pki.domain.CertificateSubject;
 import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 
@@ -20,15 +20,15 @@ import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 public final class VerifierFlow {
   private final Organization organization;
   private final CertificateProfileIssuer certificates;
-  private final EcosystemLayout layout;
+  private final Path outputDirectory;
   private final EcKeyGenerator keys = new EcKeyGenerator();
   private final IdentityStores stores = new IdentityStores();
 
   public VerifierFlow(Organization organization, CertificateProfileIssuer certificates,
-      EcosystemLayout layout) {
+      Path outputDirectory) {
     this.organization = organization;
     this.certificates = certificates;
-    this.layout = layout;
+    this.outputDirectory = outputDirectory;
   }
 
   public void generateAccess(VerifierConfig.Access config, CertificateAuthority authority,
@@ -38,7 +38,7 @@ public final class VerifierFlow {
         new CertificateSubject(config.commonName(), organization, config.subjectAlternativeNames());
     var certificate =
         certificates.issueRelyingPartyAccessCertificate(subject, key.getPublic(), authority);
-    stores.write(layout.verifierAccessKeystore(), "verifier_access_certificate",
+    stores.write(outputDirectory.resolve(config.keystoreFile()), "verifier_access_certificate",
         new SigningIdentity(key, certificate), authority, password);
   }
 
@@ -50,9 +50,10 @@ public final class VerifierFlow {
     var certificate =
         certificates.issueRelyingPartyRegistrationCertificate(subject, key.getPublic(), authority);
     var identity = new SigningIdentity(key, certificate);
-    stores.write(layout.verifierRegistrationKeystore(), "registration", identity, authority,
+    stores.write(outputDirectory.resolve(config.keystoreFile()), "registration", identity,
+        authority,
         password);
     new RegistrationDocuments().writeVerifier(config.registration(), organization, identity,
-        authority, layout);
+        authority, outputDirectory);
   }
 }

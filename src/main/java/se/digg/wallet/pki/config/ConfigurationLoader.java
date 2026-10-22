@@ -8,9 +8,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.StreamReadFeature;
-import tools.jackson.dataformat.yaml.YAMLFactory;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.dataformat.yaml.YAMLFactory;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /**
@@ -18,7 +18,8 @@ import tools.jackson.dataformat.yaml.YAMLMapper;
  * directory.
  */
 public class ConfigurationLoader {
-  private final ObjectMapper yamlMapper = YAMLMapper.builder(YAMLFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+  private final ObjectMapper yamlMapper = YAMLMapper
+      .builder(YAMLFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
       .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
       .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
 

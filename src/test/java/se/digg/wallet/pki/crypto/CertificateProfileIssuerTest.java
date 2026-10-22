@@ -101,7 +101,9 @@ class CertificateProfileIssuerTest {
   }
 
   @SuppressWarnings("PMD.AvoidUsingHardCodedIP")
-  private String ipv6Example() { return "2001:db8::1"; }
+  private String ipv6Example() {
+    return "2001:db8::1";
+  }
 
   private void assertLeaf(X509Certificate certificate) throws Exception {
     certificate.verify(ca.publicKey());

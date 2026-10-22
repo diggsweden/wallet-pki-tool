@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.application;
 
 import java.io.PrintWriter;
+import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.EnumMap;
@@ -19,7 +20,6 @@ import se.digg.wallet.pki.domain.AuthorityRole;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.domain.WalletTrustAnchors;
 import se.digg.wallet.pki.infrastructure.AuthorityStore;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 
 /**
@@ -43,7 +43,7 @@ public final class EcosystemProvisioner {
 
   public void generate(PkiConfiguration config, List<String> arguments, PrintWriter out) {
     var selected = GenerationTarget.select(arguments);
-    var layout = new EcosystemLayout(config);
+    var outputDirectory = Path.of(config.outputDirectory());
     var authorities = new AuthorityStore(config);
     var certificates =
         new CertificateProfileIssuer(new SecureRandom(), config.trustSource().publicationBaseUrl());
@@ -68,20 +68,24 @@ public final class EcosystemProvisioner {
               authorities.loadPublic(AuthorityRole.VERIFIER_ACCESS),
               authorities.loadPublic(AuthorityRole.VERIFIER_REGISTRATION)) : null;
       SigningIdentity signer = needsSigner && !selected.contains(GenerationTarget.TRUST_SOURCE)
-          ? new IdentityStores().loadTrustSigner(layout.trustSignerKeystore(),
+          ? new IdentityStores().loadTrustSigner(
+              outputDirectory.resolve(config.trustSource().signer().keystoreFile()),
               passwords.get(GenerationTarget.TRUST_SOURCE),
               authorities.loadPublic(AuthorityRole.TRUST_SOURCE))
           : null;
 
-      var verifier = new VerifierFlow(config.organization(), certificates, layout);
-      var trustSource = new TrustSourceFlow(config.organization(), layout);
+      var verifier = new VerifierFlow(config.organization(), certificates, outputDirectory);
+      var trustSource = new TrustSourceFlow(config.organization(), outputDirectory);
       if (selected.contains(GenerationTarget.PID_ISSUER)) {
-        new PidIssuerFlow(config.organization(), certificates, layout).generate(config.pidIssuer(),
+        new PidIssuerFlow(config.organization(), certificates, outputDirectory).generate(
+            config.pidIssuer(),
             loaded.get(AuthorityRole.PID_ISSUER), passwords.get(GenerationTarget.PID_ISSUER));
       }
       if (selected.contains(GenerationTarget.WALLET_PROVIDER)) {
-        new WalletProviderFlow(config.organization(), certificates, layout).generate(config.walletProvider(),
-            loaded.get(AuthorityRole.WALLET_PROVIDER), passwords.get(GenerationTarget.WALLET_PROVIDER));
+        new WalletProviderFlow(config.organization(), certificates, outputDirectory).generate(
+            config.walletProvider(),
+            loaded.get(AuthorityRole.WALLET_PROVIDER),
+            passwords.get(GenerationTarget.WALLET_PROVIDER));
       }
       if (selected.contains(GenerationTarget.VERIFIER_ACCESS)) {
         verifier.generateAccess(config.verifier().access(),

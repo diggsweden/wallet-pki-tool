@@ -4,6 +4,7 @@
 
 schemaVersion: 1
 stateDirectory: ./target/test-pki-state
+# Artifact paths below are relative to outputDirectory.
 outputDirectory: ./target/test-ecosystem
 
 organization:
@@ -12,6 +13,7 @@ organization:
   identifier: VATSE-12345678
 
 pidIssuer:
+  keystoreFile: certificates/issuer/pid_issuer.p12
   signing:
     commonName: PID Issuer (Ecosystem)
     subjectAlternativeNames:
@@ -22,10 +24,13 @@ pidIssuer:
   keystorePassword:
     env: PID_ISSUER_KEYSTORE_PASSWORD
   registration:
+    jwtFile: pid-issuer/issuer_wrprc.jwt
+    jsonFile: pid-issuer/issuer_wrprc.json
     issuer: did:web:localhost
     subject: did:web:localhost
 
 walletProvider:
+  keystoreFile: certificates/wallet-provider/wallet_provider.p12
   signing:
     commonName: Wallet Provider (Ecosystem)
     subjectAlternativeNames:
@@ -35,6 +40,7 @@ walletProvider:
 
 verifier:
   access:
+    keystoreFile: certificates/verifier-access-certificate/verifier-access-certificate.p12
     commonName: Verifier Backend (Ecosystem)
     subjectAlternativeNames:
       dns: [localhost, verifier-backend]
@@ -42,10 +48,13 @@ verifier:
     keystorePassword:
       env: VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD
   registration:
+    keystoreFile: certificates/verifier-registration-certificate/verifier-registration-certificate.p12
     commonName: Verifier Registration (Ecosystem)
     keystorePassword:
       env: VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD
     registration:
+      jwtFile: certificates/verifier-registration-certificate/registration_certificate.jwt
+      environmentFile: certificates/verifier-registration-certificate/registration_certificate.env
       name: DIGG Wallet Ecosystem
       serviceIdentifier: wallet-ecosystem
       intendedUseId: "1"
@@ -76,12 +85,17 @@ verifier:
         email: walletecosystem@example.com
 
 trustSource:
+  publicationDirectory: trust-source
+  rootCrlFile: trust-source/revocation-list.pem
   signer:
+    keystoreFile: certificates/trust-list-signer/trust_source.p12
+    certificateFile: certificates/trust-list-signer/trust_source_cert.pem
     commonName: Trust Source (Ecosystem)
     keystorePassword:
       env: TRUST_SOURCE_KEYSTORE_PASSWORD
   publicationBaseUrl: http://trust-source
   lote:
+    outputFile: trust-source/signed/trusted-entities.json
     name: Local LoTE
     sequenceNumber: 1
     validityDays: 365
@@ -107,5 +121,6 @@ trustSource:
         informationUrl: http://localhost
         streetAddress: Local
   statusList:
+    outputFile: trust-source/signed/status-list.jwt
     url: http://trust-source/signed/status-list.jwt
     validityDays: 365

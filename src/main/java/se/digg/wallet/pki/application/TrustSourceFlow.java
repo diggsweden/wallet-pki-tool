@@ -4,6 +4,7 @@
 
 package se.digg.wallet.pki.application;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import se.digg.wallet.pki.config.TrustSourceConfig;
@@ -16,7 +17,6 @@ import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 import se.digg.wallet.pki.domain.WalletTrustAnchors;
 import se.digg.wallet.pki.infrastructure.ArtifactWriter;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 import se.digg.wallet.pki.trustlist.LoteGenerator;
 import se.digg.wallet.pki.trustlist.StatusListGenerator;
@@ -24,12 +24,12 @@ import se.digg.wallet.pki.trustlist.StatusListGenerator;
 /** A dedicated leaf signs both trust documents; participant CAs are only LoTE entries. */
 public final class TrustSourceFlow {
   private final Organization organization;
-  private final EcosystemLayout layout;
+  private final Path outputDirectory;
   private final ArtifactWriter writer = new ArtifactWriter();
 
-  public TrustSourceFlow(Organization organization, EcosystemLayout layout) {
+  public TrustSourceFlow(Organization organization, Path outputDirectory) {
     this.organization = organization;
-    this.layout = layout;
+    this.outputDirectory = outputDirectory;
   }
 
   public SigningIdentity generateSigner(TrustSourceConfig.Signer config,
@@ -41,9 +41,10 @@ public final class TrustSourceFlow {
     var certificate =
         certificates.issueTrustSourceSignerCertificate(subject, key.getPublic(), authority);
     var identity = new SigningIdentity(key, certificate);
-    new IdentityStores().write(layout.trustSignerKeystore(), "trust_source", identity, authority,
+    new IdentityStores().write(outputDirectory.resolve(config.keystoreFile()), "trust_source",
+        identity, authority,
         password);
-    writer.pem(layout.trustSignerCertificate(), certificate);
+    writer.pem(outputDirectory.resolve(config.certificateFile()), certificate);
     return identity;
   }
 
@@ -51,7 +52,8 @@ public final class TrustSourceFlow {
       SigningIdentity signer) {
     var generator = new LoteGenerator();
     var document = generator.buildLoteDocument(anchors, config.lote(), organization);
-    writer.text(layout.lote(), generator.sign(document, signer));
+    writer.text(outputDirectory.resolve(config.lote().outputFile()),
+        generator.sign(document, signer));
   }
 
   public void generateStatusList(TrustSourceConfig.StatusList config, SigningIdentity signer) {
@@ -59,6 +61,6 @@ public final class TrustSourceFlow {
         StatusListGenerator.DEFAULT_EMPTY_STATUS_LIST, signer.keyPair().getPrivate(),
         signer.certificate(),
         Instant.now(), Duration.ofDays(config.validityDays()));
-    writer.text(layout.statusList(), token);
+    writer.text(outputDirectory.resolve(config.outputFile()), token);
   }
 }

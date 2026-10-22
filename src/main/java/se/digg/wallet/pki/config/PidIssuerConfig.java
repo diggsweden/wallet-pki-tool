@@ -9,9 +9,10 @@ import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 /** PID signing, nonce encryption and request encryption are always provisioned together. */
-public record PidIssuerConfig(SigningConfig signing,
+public record PidIssuerConfig(String keystoreFile, SigningConfig signing,
     Encryption encryption, PasswordSource keystorePassword, Registration registration) {
   public PidIssuerConfig {
+    Checks.relativePath(keystoreFile, "pidIssuer.keystoreFile");
     Checks.required(signing, "pidIssuer.signing");
     Checks.required(encryption, "pidIssuer.encryption");
     Checks.required(keystorePassword, "pidIssuer.keystorePassword");
@@ -23,8 +24,10 @@ public record PidIssuerConfig(SigningConfig signing,
       Checks.required(subjectAlternativeNames, "pidIssuer.encryption.subjectAlternativeNames");
     }
   }
-  public record Registration(String issuer, String subject) {
+  public record Registration(String jwtFile, String jsonFile, String issuer, String subject) {
     public Registration {
+      Checks.relativePath(jwtFile, "pidIssuer.registration.jwtFile");
+      Checks.relativePath(jsonFile, "pidIssuer.registration.jsonFile");
       if (!URI.create(Checks.text(issuer, "pidIssuer.registration.issuer")).isAbsolute()
           || !URI.create(Checks.text(subject, "pidIssuer.registration.subject")).isAbsolute()) {
         throw new IllegalArgumentException(

@@ -19,6 +19,21 @@ java -jar target/wallet-pki-tool.jar generate -c examples/ecosystem.yaml
 
 Both state and output paths, and all input file paths, are relative to the **working directory**, not the YAML file. The example writes private authority state under `.wallet-pki/` and consumer artifacts under `config/`.
 
+Artifact paths are listed beside their owning role in YAML, relative to `outputDirectory`. This makes the ecosystem's file contract visible in one document. The paths in the example match the service configuration; changing them requires updating the consuming services too.
+
+```yaml
+pidIssuer:
+  keystoreFile: certificates/issuer/pid_issuer.p12
+  # Signing, encryption and password settings follow.
+  registration:
+    jwtFile: pid-issuer/issuer_wrprc.jwt
+    jsonFile: pid-issuer/issuer_wrprc.json
+    issuer: did:web:localhost
+    subject: did:web:localhost
+```
+
+The complete [example](examples/ecosystem.yaml) also lists the wallet and verifier keystores, verifier registration JWT/environment file, trust signer keystore/certificate, CA publication directory, root CRL, LoTE and status-list paths. There is no separate layout class or fallback filename inference.
+
 For the container image, mount the workspace, pass passwords with `--env-file`, and run each command:
 
 ```bash
@@ -89,7 +104,7 @@ Participant leaf rotation does not change LoTE: it trusts the four participant *
 
 ## Consumer artifact contract
 
-Paths below are relative to `outputDirectory`.
+Paths below show the values declared in the example YAML, relative to `outputDirectory`.
 
 | Artifact | Path | PKCS#12 aliases |
 | :--- | :--- | :--- |
@@ -105,7 +120,7 @@ Paths below are relative to `outputDirectory`.
 | Signed status list | `trust-source/signed/status-list.jwt` | — |
 | Public CA material | `trust-source/<role>/ca.pem`, `revocation-list.pem` | — |
 
-Public authority directories are `pid-issuer`, `wallet-provider`, `verifier-access-certificate`, `verifier-registration-certificate` and `trust-source`. The trust-source CRL is also published at `trust-source/revocation-list.pem`. Private CA material stays under `stateDirectory/authorities/<role>/`; never serve that directory. All PKCS#12 chains contain the leaf followed by its root.
+Public authority directories are `pid-issuer`, `wallet-provider`, `verifier-access-certificate`, `verifier-registration-certificate` and `trust-source` under `trustSource.publicationDirectory`. The trust-source CRL is also published at `trustSource.rootCrlFile`. Private CA material stays under `stateDirectory/authorities/<role>/`; never serve that directory. All PKCS#12 chains contain the leaf followed by its root.
 
 Despite its filename, `trusted-entities.json` contains a **compact JWS**, not plain JSON. Its four service types are assigned directly from the named roles. Entity names, information URLs, postal addresses, scheme name, sequence and validity are explicit LoTE settings. The organization supplies scheme operator and territory. Both trust documents carry the dedicated signing leaf in `x5c`.
 
@@ -122,15 +137,17 @@ Read these files in order to follow an operation:
 3. [`PidIssuerFlow`](src/main/java/se/digg/wallet/pki/application/PidIssuerFlow.java), [`WalletProviderFlow`](src/main/java/se/digg/wallet/pki/application/WalletProviderFlow.java), [`VerifierFlow`](src/main/java/se/digg/wallet/pki/application/VerifierFlow.java) and [`TrustSourceFlow`](src/main/java/se/digg/wallet/pki/application/TrustSourceFlow.java) describe each role's steps.
 4. [`crypto/CertificateProfileIssuer.java`](src/main/java/se/digg/wallet/pki/crypto/CertificateProfileIssuer.java) owns the named X.509 profile recipes. Change extensions, key usages and certificate lifetimes here.
 5. [`trustlist/LoteGenerator.java`](src/main/java/se/digg/wallet/pki/trustlist/LoteGenerator.java) builds the four explicit LoTE entries. [`RegistrationDocuments`](src/main/java/se/digg/wallet/pki/trustlist/RegistrationDocuments.java) contains typed registration payloads and protocol field mappings.
-6. [`infrastructure/AuthorityStore.java`](src/main/java/se/digg/wallet/pki/infrastructure/AuthorityStore.java) owns CA initialization/loading and CRL validation; [`EcosystemLayout`](src/main/java/se/digg/wallet/pki/infrastructure/EcosystemLayout.java) owns consumer paths. Crypto, PEM and keystore mechanics stay below the role flows.
+6. [`infrastructure/AuthorityStore.java`](src/main/java/se/digg/wallet/pki/infrastructure/AuthorityStore.java) owns CA initialization/loading and CRL validation. Artifact paths live in each role's YAML settings; flows resolve them directly against `outputDirectory`. Crypto, PEM and keystore mechanics stay below the role flows.
 
 There is no certificate registry, generic profile dispatch, string reference resolution or certificate-name inference. Low-level crypto helpers are shared.
 
 ## Migrating the previous generic configuration
 
-This is a breaking schema change. `authorities`, `certificates`, `trustLists`, arbitrary IDs, profile strings and configurable aliases/output filenames are removed. Use the example to configure the five roles. `outputDirectory` now points at the ecosystem's `config/` root, not its `certificates/` subdirectory. Target names are the fixed operations listed above.
+This is a breaking schema change. `authorities`, `certificates`, `trustLists`, arbitrary IDs, profile strings and configurable aliases are removed. Use the example to configure the five roles and declare their artifact paths. `outputDirectory` now points at the ecosystem's `config/` root, not its `certificates/` subdirectory. Target names are the fixed operations listed above.
 
 If you used the earlier role-based example, remove the five `authority` blocks; existing local CA state remains in the same directories and is reused. External CA source/file selectors are no longer supported. To preserve roots from another location, explicitly place their current `ca.pem`, `ca_private_key.pem` and `revocation-list.pem` under `stateDirectory/authorities/<role>/` before initialization. They must match the fixed role common name and configured organization/country. The CLI does not inspect old directories to infer a migration.
+
+If your role-based configuration predates the artifact manifest, add the file/directory fields shown in the current example. They are required, and its values preserve the previously generated locations. Artifact paths must be relative and stay inside `outputDirectory`.
 
 The automatic `trusted_issuers.p12` side output was removed: it is not consumed by the inspected ecosystem Compose configuration. No private trust-source PEM key is exported; the CLI signs from its PKCS#12 keystore. The registration alias is explicitly `registration`, matching the ecosystem script. Automatic `.license` sidecars are not generated.
 

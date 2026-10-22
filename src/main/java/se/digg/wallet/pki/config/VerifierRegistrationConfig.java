@@ -8,11 +8,14 @@ import java.util.List;
 import se.digg.wallet.pki.domain.Checks;
 
 /** Business metadata for the verifier's PID registration JWT. */
-public record VerifierRegistrationConfig(String name, String serviceIdentifier,
+public record VerifierRegistrationConfig(String jwtFile, String environmentFile,
+    String name, String serviceIdentifier,
     String intendedUseId,
     String publicBaseUrl, List<LocalizedText> description, List<LocalizedText> purpose,
     List<String> requestedPidClaims, SupervisoryAuthority supervisoryAuthority, int validityDays) {
   public VerifierRegistrationConfig {
+    Checks.relativePath(jwtFile, "verifier.registration.registration.jwtFile");
+    Checks.relativePath(environmentFile, "verifier.registration.registration.environmentFile");
     Checks.text(name, "registration.name");
     Checks.text(serviceIdentifier, "registration.serviceIdentifier");
     Checks.text(intendedUseId, "registration.intendedUseId");

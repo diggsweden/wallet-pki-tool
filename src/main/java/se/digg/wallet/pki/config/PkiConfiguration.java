@@ -18,16 +18,17 @@ public record PkiConfiguration(int schemaVersion, String stateDirectory, String 
           "schemaVersion must be 1; generic authorities/certificates configuration is no longer supported");
     Checks.text(stateDirectory, "stateDirectory");
     Checks.text(outputDirectory, "outputDirectory");
-    Path state = Path.of(stateDirectory).toAbsolutePath().normalize();
-    Path publication =
-        Path.of(outputDirectory).resolve("trust-source").toAbsolutePath().normalize();
-    if (state.startsWith(publication) || publication.startsWith(state))
-      throw new IllegalArgumentException(
-          "Private state and public trust-source directories must not overlap");
     Checks.required(organization, "organization");
     Checks.required(pidIssuer, "pidIssuer");
     Checks.required(walletProvider, "walletProvider");
     Checks.required(verifier, "verifier");
     Checks.required(trustSource, "trustSource");
+    Path state = Path.of(stateDirectory).toAbsolutePath().normalize();
+    Path publication =
+        Path.of(outputDirectory).resolve(trustSource.publicationDirectory()).toAbsolutePath()
+            .normalize();
+    if (state.startsWith(publication) || publication.startsWith(state))
+      throw new IllegalArgumentException(
+          "Private state and public trust-source directories must not overlap");
   }
 }

@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.domain;
 
 import java.net.URI;
+import java.nio.file.Path;
 import java.util.List;
 
 /** Invariants shared by configuration and certificate value objects. */
@@ -29,6 +30,15 @@ public final class Checks {
         || uri.getHost() == null || uri.getFragment() != null || uri.getQuery() != null) {
       throw new IllegalArgumentException(
           field + " must be an absolute HTTP(S) URL without query or fragment");
+    }
+    return value;
+  }
+
+  /** Artifact locations are explicit paths relative to the output directory. */
+  public static String relativePath(String value, String field) {
+    Path path = Path.of(text(value, field)).normalize();
+    if (path.isAbsolute() || path.startsWith("..") || path.toString().isEmpty()) {
+      throw new IllegalArgumentException(field + " must be a relative path inside outputDirectory");
     }
     return value;
   }

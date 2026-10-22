@@ -4,6 +4,7 @@
 
 package se.digg.wallet.pki.application;
 
+import java.nio.file.Path;
 import java.security.cert.Certificate;
 import se.digg.wallet.pki.config.PidIssuerConfig;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
@@ -14,7 +15,6 @@ import se.digg.wallet.pki.domain.CertificateSubject;
 import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.PidIssuerMaterial;
 import se.digg.wallet.pki.domain.SigningIdentity;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 
 /** PID issuance: three keys in one keystore, followed by the issuer registration JWT. */
@@ -23,13 +23,13 @@ public final class PidIssuerFlow {
   private final KeystoreManager keystores = new KeystoreManager();
   private final CertificateProfileIssuer certificates;
   private final Organization organization;
-  private final EcosystemLayout layout;
+  private final Path outputDirectory;
 
   public PidIssuerFlow(Organization organization, CertificateProfileIssuer certificates,
-      EcosystemLayout layout) {
+      Path outputDirectory) {
     this.organization = organization;
     this.certificates = certificates;
-    this.layout = layout;
+    this.outputDirectory = outputDirectory;
   }
 
   public void generate(PidIssuerConfig config, CertificateAuthority authority, char[] password) {
@@ -48,18 +48,19 @@ public final class PidIssuerFlow {
             config.encryption().subjectAlternativeNames()),
         requestKey.getPublic(), authority));
     var material = new PidIssuerMaterial(authority, signing, nonce, request);
-    writeKeystore(material, password);
-    new RegistrationDocuments().writePidIssuer(config.registration(), material.signing(), layout);
+    writeKeystore(material, outputDirectory.resolve(config.keystoreFile()), password);
+    new RegistrationDocuments().writePidIssuer(config.registration(), material.signing(),
+        outputDirectory);
   }
 
-  private void writeKeystore(PidIssuerMaterial material, char[] password) {
+  private void writeKeystore(PidIssuerMaterial material, Path keystoreFile, char[] password) {
     var store = keystores.createPkcs12KeyStore();
     addIdentity(store, "pid_issuer", material.signing(), material.authority(), password);
     addIdentity(store, "nonce-encryption", material.nonceEncryption(), material.authority(),
         password);
     addIdentity(store, "request-encryption", material.requestEncryption(), material.authority(),
         password);
-    keystores.saveKeyStore(store, layout.pidKeystore(), password);
+    keystores.saveKeyStore(store, keystoreFile, password);
   }
 
   private void addIdentity(java.security.KeyStore store, String alias, SigningIdentity identity,

@@ -48,27 +48,30 @@ class AuthorityStoreTest {
   @Test
   void repeated_initialization_preserves_all_authority_material() throws Exception {
     var config = EcosystemFixture.configuration(directory);
-    var layout = new EcosystemLayout(config);
     var store = new AuthorityStore(config);
     var original = store.initialize(AuthorityRole.PID_ISSUER);
     var reloaded = store.initialize(AuthorityRole.PID_ISSUER);
     assertThat(reloaded.certificate()).isEqualTo(original.certificate());
     assertThat(reloaded.privateKey().getEncoded()).isEqualTo(original.privateKey().getEncoded());
     assertThat(reloaded.crl()).isEqualTo(original.crl());
-    assertThat(Files.readAllBytes(layout.publication(AuthorityRole.PID_ISSUER).resolve("ca.pem")))
+    assertThat(
+        Files.readAllBytes(directory.resolve("config/trust-source")
+            .resolve(AuthorityRole.PID_ISSUER.directory()).resolve("ca.pem")))
         .isEqualTo(
-            Files.readAllBytes(layout.authority(AuthorityRole.PID_ISSUER).resolve("ca.pem")));
+            Files.readAllBytes(directory.resolve("state/authorities")
+                .resolve(AuthorityRole.PID_ISSUER.directory()).resolve("ca.pem")));
   }
 
   @Test
   void incomplete_authorities_are_never_replaced() throws Exception {
     var config = EcosystemFixture.configuration(directory);
-    var layout = new EcosystemLayout(config);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
-    Path key = layout.authority(AuthorityRole.PID_ISSUER).resolve("ca_private_key.pem");
+    Path key = directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+        .resolve("ca_private_key.pem");
     byte[] keyBefore = Files.readAllBytes(key);
-    Files.delete(layout.authority(AuthorityRole.PID_ISSUER).resolve("ca.pem"));
+    Files.delete(directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+        .resolve("ca.pem"));
     assertThatThrownBy(() -> store.initialize(AuthorityRole.PID_ISSUER))
         .hasMessageContaining("incomplete roots must be repaired");
     assertThat(Files.readAllBytes(key)).isEqualTo(keyBefore);
@@ -78,11 +81,11 @@ class AuthorityStoreTest {
   void existing_authority_files_are_reused_without_replacing_keys_certificates_or_crls()
       throws Exception {
     var config = EcosystemFixture.configuration(directory);
-    var layout = new EcosystemLayout(config);
     var manager = new CertificateAuthorityManager();
     var original = manager.createAuthority("pid-issuer", "DIGG Wallet PID Issuer CA",
         config.organization());
-    Path state = layout.authority(AuthorityRole.PID_ISSUER);
+    Path state =
+        directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory());
     manager.saveAuthority(original, state);
     var store = new AuthorityStore(config);
     byte[] crlBefore = Files.readAllBytes(state.resolve("revocation-list.pem"));
@@ -90,18 +93,21 @@ class AuthorityStoreTest {
     assertThat(reloaded.certificate()).isEqualTo(original.certificate());
     assertThat(reloaded.privateKey().getEncoded()).isEqualTo(original.privateKey().getEncoded());
     assertThat(reloaded.crl()).isEqualTo(original.crl());
-    assertThat(Files.readAllBytes(layout.publication(AuthorityRole.PID_ISSUER)
-        .resolve("revocation-list.pem"))).isEqualTo(crlBefore);
+    assertThat(
+        Files.readAllBytes(directory.resolve("config/trust-source")
+            .resolve(AuthorityRole.PID_ISSUER.directory())
+            .resolve("revocation-list.pem")))
+        .isEqualTo(crlBefore);
     assertThat(Files.readAllBytes(state.resolve("revocation-list.pem"))).isEqualTo(crlBefore);
   }
 
   @Test
   void mismatched_ca_keys_are_rejected_without_replacing_them() throws Exception {
     var config = EcosystemFixture.configuration(directory);
-    var layout = new EcosystemLayout(config);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
-    Path key = layout.authority(AuthorityRole.PID_ISSUER).resolve("ca_private_key.pem");
+    Path key = directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+        .resolve("ca_private_key.pem");
     new EcKeyGenerator().writePrivateKeyPem(new EcKeyGenerator().generateKeyPair().getPrivate(),
         key);
     byte[] before = Files.readAllBytes(key);
@@ -113,10 +119,10 @@ class AuthorityStoreTest {
   @Test
   void missing_crls_are_rejected_instead_of_resetting_revocation_state() throws Exception {
     var config = EcosystemFixture.configuration(directory);
-    var layout = new EcosystemLayout(config);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
-    Files.delete(layout.authority(AuthorityRole.PID_ISSUER).resolve("revocation-list.pem"));
+    Files.delete(directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+        .resolve("revocation-list.pem"));
     assertThatThrownBy(() -> store.initialize(AuthorityRole.PID_ISSUER))
         .hasMessageContaining("revocation-list.pem");
   }
@@ -124,12 +130,14 @@ class AuthorityStoreTest {
   @Test
   void a_different_authoritys_crl_is_rejected() throws Exception {
     var config = EcosystemFixture.configuration(directory);
-    var layout = new EcosystemLayout(config);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
     store.initialize(AuthorityRole.WALLET_PROVIDER);
-    Files.copy(layout.authority(AuthorityRole.WALLET_PROVIDER).resolve("revocation-list.pem"),
-        layout.authority(AuthorityRole.PID_ISSUER).resolve("revocation-list.pem"),
+    Files.copy(
+        directory.resolve("state/authorities").resolve(AuthorityRole.WALLET_PROVIDER.directory())
+            .resolve("revocation-list.pem"),
+        directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+            .resolve("revocation-list.pem"),
         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     assertThatThrownBy(() -> store.load(AuthorityRole.PID_ISSUER))
         .hasMessageContaining("Invalid CRL");

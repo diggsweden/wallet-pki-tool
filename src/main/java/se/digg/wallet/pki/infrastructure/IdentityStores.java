@@ -4,10 +4,10 @@
 
 package se.digg.wallet.pki.infrastructure;
 
+import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.nio.file.Path;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.KeystoreManager;

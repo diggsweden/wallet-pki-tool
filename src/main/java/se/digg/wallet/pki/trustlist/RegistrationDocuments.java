@@ -6,20 +6,20 @@ package se.digg.wallet.pki.trustlist;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.nimbusds.jose.JWSObject;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import se.digg.wallet.pki.config.PidIssuerConfig;
-import se.digg.wallet.pki.config.VerifierRegistrationConfig;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.LocalizedText;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.SupervisoryAuthority;
+import se.digg.wallet.pki.config.VerifierRegistrationConfig;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
 import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.infrastructure.ArtifactWriter;
-import se.digg.wallet.pki.infrastructure.EcosystemLayout;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -30,14 +30,14 @@ public final class RegistrationDocuments {
   private final ArtifactWriter writer = new ArtifactWriter();
 
   public void writePidIssuer(PidIssuerConfig.Registration config, SigningIdentity identity,
-      EcosystemLayout layout) {
+      Path outputDirectory) {
     var payload = new PidPayload(config.issuer(), config.subject());
     String token = signer.signJws(json.writeValueAsString(payload), identity.keyPair().getPrivate(),
         identity.certificate(), "rc-wrp+jwt");
-    writer.text(layout.pidRegistration(), token);
+    writer.text(outputDirectory.resolve(config.jwtFile()), token);
     try {
       var header = JWSObject.parse(token).getHeader().toJSONObject();
-      writer.text(layout.pidRegistration().resolveSibling("issuer_wrprc.json"),
+      writer.text(outputDirectory.resolve(config.jsonFile()),
           json.writeValueAsString(new PidDocument(header, payload)));
     } catch (java.text.ParseException e) {
       throw new PkiCryptoException("Cannot serialize PID registration header", e);
@@ -45,7 +45,7 @@ public final class RegistrationDocuments {
   }
 
   public void writeVerifier(VerifierRegistrationConfig config, Organization organization,
-      SigningIdentity identity, CertificateAuthority authority, EcosystemLayout layout) {
+      SigningIdentity identity, CertificateAuthority authority, Path outputDirectory) {
     long issuedAt = Instant.now().getEpochSecond();
     String base = config.publicBaseUrl().replaceAll("/+$", "");
     var claims = config.requestedPidClaims().stream()
@@ -64,8 +64,8 @@ public final class RegistrationDocuments {
         new Status(new StatusList(base + "/registration-certificate-status", 0)));
     String token = signer.signJws(json.writeValueAsString(payload), identity.keyPair().getPrivate(),
         List.of(identity.certificate(), authority.certificate()), "rc-wrp+jwt");
-    writer.text(layout.verifierRegistration(), token);
-    writer.text(layout.verifierEnvironment(),
+    writer.text(outputDirectory.resolve(config.jwtFile()), token);
+    writer.text(outputDirectory.resolve(config.environmentFile()),
         "VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + token + "\n");
   }
 

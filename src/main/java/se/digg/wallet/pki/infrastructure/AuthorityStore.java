@@ -21,26 +21,29 @@ import se.digg.wallet.pki.domain.AuthorityRole;
 /** Loads the five local ecosystem CAs. Only initialize() can create a missing root. */
 public final class AuthorityStore {
   private final PkiConfiguration config;
-  private final EcosystemLayout layout;
+  private final Path authorityDirectory;
+  private final Path publicationDirectory;
   private final CertificateAuthorityManager manager = new CertificateAuthorityManager();
   private final EcKeyGenerator keys = new EcKeyGenerator();
   private final ArtifactWriter writer = new ArtifactWriter();
 
   public AuthorityStore(PkiConfiguration config) {
     this.config = config;
-    this.layout = new EcosystemLayout(config);
+    this.authorityDirectory = Path.of(config.stateDirectory()).resolve("authorities");
+    this.publicationDirectory = Path.of(config.outputDirectory())
+        .resolve(config.trustSource().publicationDirectory());
   }
 
   private Path certificatePath(AuthorityRole role) {
-    return layout.authority(role).resolve("ca.pem");
+    return authorityDirectory.resolve(role.directory()).resolve("ca.pem");
   }
 
   private Path keyPath(AuthorityRole role) {
-    return layout.authority(role).resolve("ca_private_key.pem");
+    return authorityDirectory.resolve(role.directory()).resolve("ca_private_key.pem");
   }
 
   private Path crlPath(AuthorityRole role) {
-    return layout.authority(role).resolve("revocation-list.pem");
+    return authorityDirectory.resolve(role.directory()).resolve("revocation-list.pem");
   }
 
   public CertificateAuthority initialize(AuthorityRole role) {
@@ -49,7 +52,7 @@ public final class AuthorityStore {
     if (!anyFileExists) {
       var created = manager.createAuthority(role.directory(), role.commonName(),
           config.organization());
-      manager.saveAuthority(created, layout.authority(role));
+      manager.saveAuthority(created, authorityDirectory.resolve(role.directory()));
     }
     var authority = load(role);
     publish(role, authority);
@@ -97,9 +100,12 @@ public final class AuthorityStore {
   }
 
   public void publish(AuthorityRole role, CertificateAuthority authority) {
-    writer.pem(layout.publication(role).resolve("ca.pem"), authority.certificate());
-    writer.pem(layout.publication(role).resolve("revocation-list.pem"), authority.crl());
+    writer.pem(publicationDirectory.resolve(role.directory()).resolve("ca.pem"),
+        authority.certificate());
+    writer.pem(publicationDirectory.resolve(role.directory()).resolve("revocation-list.pem"),
+        authority.crl());
     if (role == AuthorityRole.TRUST_SOURCE)
-      writer.pem(layout.output().resolve("trust-source/revocation-list.pem"), authority.crl());
+      writer.pem(Path.of(config.outputDirectory()).resolve(config.trustSource().rootCrlFile()),
+          authority.crl());
   }
 }

@@ -14,18 +14,20 @@ public record VerifierConfig(Access access, Registration registration) {
     Checks.required(registration, "verifier.registration");
   }
 
-  public record Access(String commonName,
+  public record Access(String keystoreFile, String commonName,
       SubjectAlternativeNames subjectAlternativeNames, PasswordSource keystorePassword) {
     public Access {
+      Checks.relativePath(keystoreFile, "verifier.access.keystoreFile");
       Checks.text(commonName, "verifier.access.commonName");
       subjectAlternativeNames = subjectAlternativeNames == null ? SubjectAlternativeNames.empty()
           : subjectAlternativeNames;
       Checks.required(keystorePassword, "verifier.access.keystorePassword");
     }
   }
-  public record Registration(String commonName,
+  public record Registration(String keystoreFile, String commonName,
       PasswordSource keystorePassword, VerifierRegistrationConfig registration) {
     public Registration {
+      Checks.relativePath(keystoreFile, "verifier.registration.keystoreFile");
       Checks.text(commonName, "verifier.registration.commonName");
       Checks.required(keystorePassword, "verifier.registration.keystorePassword");
       Checks.required(registration, "verifier.registration.registration");

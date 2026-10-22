@@ -10,10 +10,8 @@ import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.KeyPair;
 import java.security.GeneralSecurityException;
-import java.security.interfaces.ECPublicKey;
-import org.bouncycastle.jce.ECNamedCurveTable;
+import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.Signature;
@@ -21,6 +19,7 @@ import java.security.cert.CRLException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509CRL;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPublicKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
@@ -41,6 +40,7 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
 import org.bouncycastle.cert.jcajce.JcaX509v2CRLBuilder;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.operator.ContentSigner;
@@ -125,10 +125,12 @@ public class CertificateAuthorityManager {
       if (!certificate.getIssuerX500Principal().equals(certificate.getSubjectX500Principal())
           || certificate.getBasicConstraints() < 0 || usage == null || usage.length < 7
           || !usage[5] || !usage[6]) {
-        throw new PkiCryptoException("Expected a self-signed root CA with certificate and CRL signing usage");
+        throw new PkiCryptoException(
+            "Expected a self-signed root CA with certificate and CRL signing usage");
       }
       if (!(certificate.getPublicKey() instanceof ECPublicKey ec)
-          || !ec.getParams().getOrder().equals(ECNamedCurveTable.getParameterSpec(EcKeyGenerator.DEFAULT_CURVE).getN())) {
+          || !ec.getParams().getOrder()
+              .equals(ECNamedCurveTable.getParameterSpec(EcKeyGenerator.DEFAULT_CURVE).getN())) {
         throw new PkiCryptoException("Wallet authorities require EC P-256 keys");
       }
     } catch (GeneralSecurityException e) {
@@ -144,7 +146,8 @@ public class CertificateAuthorityManager {
       if (!crl.getIssuerX500Principal().equals(certificate.getSubjectX500Principal())
           || crl.getNextUpdate() == null || crl.getNextUpdate().before(now)
           || crl.getThisUpdate().after(now)) {
-        throw new PkiCryptoException("Authority CRL is expired, not yet valid or has a different issuer");
+        throw new PkiCryptoException(
+            "Authority CRL is expired, not yet valid or has a different issuer");
       }
     } catch (GeneralSecurityException e) {
       throw new PkiCryptoException("Invalid CRL signature", e);
