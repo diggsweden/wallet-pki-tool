@@ -2,52 +2,125 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-environment: local
-outputDir: ./target/test-certificates
+schemaVersion: 1
+stateDirectory: ./target/test-pki-state
+outputDirectory: ./target/test-ecosystem
 
-authorities:
-  - id: verifier-access-ca
-    commonName: "DIGG Wallet Verifier Access CA"
-  - id: pid-issuer-ca
-    commonName: "DIGG Wallet PID Issuer CA"
-  - id: wallet-provider-ca
-    commonName: "DIGG Wallet Provider CA"
-  - id: trust-source-ca
-    commonName: "DIGG Wallet Trust Source CA"
+organization:
+  name: DIGG
+  country: SE
+  identifier: VATSE-12345678
 
-certificates:
-  - id: verifier-access-certificate
-    type: relying-party-access
-    ca: verifier-access-ca
-    keystore: ./verifier-access-certificate/verifier-access-certificate.p12
-    passwordEnv: TEST_VERIFIER_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "verifier-backend"
-    tradeName: "DIGG Verifier"
-    country: "SE"
-    organizationIdentifier: "VATSE-12345678"
+pidIssuer:
+  authority:
+    source: managed
+    commonName: DIGG Wallet PID Issuer CA
+  signing:
+    commonName: PID Issuer (Ecosystem)
+    subjectAlternativeNames:
+      dns: [localhost, pid-issuer]
+  encryption:
+    subjectAlternativeNames:
+      dns: [localhost]
+  keystorePassword:
+    env: PID_ISSUER_KEYSTORE_PASSWORD
+  registration:
+    issuer: did:web:localhost
+    subject: did:web:localhost
 
-  - id: pid-issuer
-    type: pid-issuer-service
-    ca: pid-issuer-ca
-    keystore: ./issuer/pid_issuer.p12
-    passwordEnv: TEST_PID_ISSUER_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "pid-issuer"
+walletProvider:
+  authority:
+    source: managed
+    commonName: DIGG Wallet Provider CA
+  signing:
+    commonName: Wallet Provider (Ecosystem)
+    subjectAlternativeNames:
+      dns: [localhost, wallet-provider]
+  keystorePassword:
+    env: WALLET_PROVIDER_KEYSTORE_PASSWORD
 
-  - id: wallet-provider
-    type: wallet-provider-service
-    ca: wallet-provider-ca
-    keystore: ./wallet-provider/wallet_provider.p12
-    passwordEnv: TEST_PROVIDER_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "wallet-provider"
+verifier:
+  access:
+    authority:
+      source: managed
+      commonName: DIGG Wallet Verifier Access Certificate CA
+    commonName: Verifier Backend (Ecosystem)
+    subjectAlternativeNames:
+      dns: [localhost, verifier-backend]
+      uri: ['https://localhost/demo-verifier']
+    keystorePassword:
+      env: VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD
+  registration:
+    authority:
+      source: managed
+      commonName: DIGG Wallet Verifier Registration Certificate CA
+    commonName: Verifier Registration (Ecosystem)
+    keystorePassword:
+      env: VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD
+    registration:
+      name: DIGG Wallet Ecosystem
+      serviceIdentifier: wallet-ecosystem
+      intendedUseId: "1"
+      publicBaseUrl: https://localhost/local-registration-certificate
+      validityDays: 365
+      description:
+        - lang: en
+          value: Local wallet ecosystem service
+        - lang: sv
+          value: Lokal wallet-ekosystemtjänst
+      purpose:
+        - lang: en
+          value: Identification with credentials
+        - lang: sv
+          value: Identifiering med intyg
+      requestedPidClaims:
+        - personal_administrative_number
+        - family_name
+        - given_name
+        - birthdate
+        - address.street_address
+        - address.postal_code
+        - address.locality
+        - address.country
+      supervisoryAuthority:
+        name: Local Wallet Ecosystem
+        country: SE
+        email: walletecosystem@example.com
 
-trustLists:
-  - id: lote
-    type: etsi-119-602-lote
-    signerAuthority: trust-source-ca
-    outputFile: ./trust-source/signed/trusted-entities.json
+trustSource:
+  authority:
+    source: managed
+    commonName: DIGG Wallet Trust Source CA
+  signer:
+    commonName: Trust Source (Ecosystem)
+    keystorePassword:
+      env: TRUST_SOURCE_KEYSTORE_PASSWORD
+  publicationBaseUrl: http://trust-source
+  lote:
+    name: Local LoTE
+    sequenceNumber: 1
+    validityDays: 365
+    trustedAuthorities:
+      pidIssuer:
+        entityName: Local PID Provider
+        serviceName: Local PID Issuance
+        informationUrl: http://localhost
+        streetAddress: Local
+      walletProvider:
+        entityName: Local Wallet Provider
+        serviceName: Local Wallet Issuance
+        informationUrl: http://localhost
+        streetAddress: Local
+      verifierAccess:
+        entityName: Local WRPAC Provider
+        serviceName: Local WRPAC Issuance
+        informationUrl: http://localhost
+        streetAddress: Local
+      verifierRegistration:
+        entityName: Local WRPRC Provider
+        serviceName: Local WRPRC Issuance
+        informationUrl: http://localhost
+        streetAddress: Local
+  statusList:
+    url: http://trust-source/signed/status-list.jwt
+    validityDays: 365

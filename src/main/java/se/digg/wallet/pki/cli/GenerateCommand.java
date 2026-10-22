@@ -5,8 +5,6 @@
 package se.digg.wallet.pki.cli;
 
 import java.io.File;
-import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -15,103 +13,43 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
-import se.digg.wallet.pki.config.CertificateConfig;
+import se.digg.wallet.pki.application.EcosystemProvisioner;
 import se.digg.wallet.pki.config.ConfigurationLoader;
-import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
-import se.digg.wallet.pki.generator.PkiEngine;
 
-/** Subcommand for generating PKI certificates, keystores, and trust lists. */
-@Command(
-    name = "generate",
-    mixinStandardHelpOptions = true,
-    description = "Generate certificates, keystores, and LoTE from a YAML configuration.")
+/** Provisions named roles using already initialized authorities. */
+@Command(name = "generate", mixinStandardHelpOptions = true,
+    description = "Generate wallet ecosystem artifacts using initialized authorities.")
 public class GenerateCommand implements Callable<Integer> {
-
   @Spec
   private CommandSpec spec;
-
-  @Option(
-      names = {"-c", "--config"},
-      required = true,
-      description = "Path to the YAML configuration file.")
+  @Option(names = {"-c", "--config"}, required = true,
+      description = "Role-based ecosystem YAML configuration.")
   private File configFile;
-
-  @Parameters(
-      paramLabel = "TARGETS",
-      description = {
-          "Optional specific target IDs (authorities, certificates,",
-          "or trust lists) to generate."
-      })
+  @Parameters(paramLabel = "TARGETS",
+      description = "Optional targets: pid-issuer, wallet-provider, verifier-access, verifier-registration, trust-source, lote, status-list. Default: all.")
   private List<String> targets = new ArrayList<>();
+  private final ConfigurationLoader loader;
+  private final EcosystemProvisioner provisioner;
 
-  private final ConfigurationLoader configLoader;
-  private final SecretResolver secretResolver;
-  private final PkiEngine pkiEngine;
-
-  /** Default constructor. */
   public GenerateCommand() {
     this(new ConfigurationLoader(), new SecretResolver());
   }
 
-  /** Creates a GenerateCommand with explicit config loader and secret resolver. */
-  public GenerateCommand(ConfigurationLoader configLoader, SecretResolver secretResolver) {
-    this(configLoader, secretResolver, new PkiEngine(secretResolver));
-  }
-
-  /** Creates a GenerateCommand with explicit dependencies. */
-  public GenerateCommand(
-      ConfigurationLoader configLoader, SecretResolver secretResolver, PkiEngine pkiEngine) {
-    this.configLoader = configLoader;
-    this.secretResolver = secretResolver;
-    this.pkiEngine = pkiEngine;
+  public GenerateCommand(ConfigurationLoader loader, SecretResolver secrets) {
+    this.loader = loader;
+    this.provisioner = new EcosystemProvisioner(secrets);
   }
 
   @Override
   public Integer call() {
-    PrintWriter out =
-        spec != null
-            ? spec.commandLine().getOut()
-            : new PrintWriter(System.out, true, StandardCharsets.UTF_8);
-    PrintWriter err =
-        spec != null
-            ? spec.commandLine().getErr()
-            : new PrintWriter(System.err, true, StandardCharsets.UTF_8);
-
     try {
-      // 1. Load and parse YAML configuration
-      out.println("Loading configuration from: %s".formatted(configFile.getPath()));
-      PkiConfiguration config = configLoader.load(configFile.toPath());
-
-      out.println(
-          "Environment: %s"
-              .formatted(config.environment() != null ? config.environment() : "default"));
-      out.println("Output Directory: %s".formatted(config.outputDir()));
-      out.println("Authorities: %d configured".formatted(config.authorities().size()));
-      out.println("Certificates: %d configured".formatted(config.certificates().size()));
-      out.println("Trust lists: %d configured".formatted(config.trustLists().size()));
-
-      if (targets != null && !targets.isEmpty()) {
-        out.println("Selected targets for generation: %s".formatted(String.join(", ", targets)));
-      } else {
-        out.println("Generating all configured authorities, certificates, and trust lists...");
-      }
-
-      // 2. Validate that secrets can be resolved safely for selected targets
-      for (CertificateConfig cert : config.certificates()) {
-        if (targets == null || targets.isEmpty() || targets.contains(cert.id())) {
-          secretResolver.resolveKeystorePassword(cert);
-          out.println("  ✓ Secret for certificate '%s' resolved successfully".formatted(cert.id()));
-        }
-      }
-
-      // 3. Execute CA, certificate, and keystore generation
-      pkiEngine.generate(config, targets, out);
-
-      out.println("Generation completed successfully.");
+      var config = loader.load(configFile.toPath());
+      provisioner.generate(config, targets, spec.commandLine().getOut());
+      spec.commandLine().getOut().println("Generation completed: " + config.outputDirectory());
       return 0;
     } catch (Exception e) {
-      err.println("Error: %s".formatted(e.getMessage()));
+      spec.commandLine().getErr().println("Error: " + e.getMessage());
       return 1;
     }
   }
