@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import se.digg.wallet.pki.config.PidIssuerConfig;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.LocalizedText;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.SupervisoryAuthority;
@@ -71,13 +72,25 @@ public final class RegistrationDocuments {
 
   public record PidPayload(String iss, String sub) {
   }
-  public record PidDocument(java.util.Map<String, Object> headers, PidPayload payload) {
+  public record PidDocument(Map<String, Object> headers, PidPayload payload) {
+    public PidDocument {
+      headers = Map.copyOf(headers);
+    }
   }
   public record RequestedClaim(List<String> path) {
+    public RequestedClaim {
+      path = List.copyOf(path);
+    }
   }
   public record CredentialMetadata(@JsonProperty("vct_values") List<String> vctValues) {
+    public CredentialMetadata {
+      vctValues = List.copyOf(vctValues);
+    }
   }
   public record Credential(String format, CredentialMetadata meta, List<RequestedClaim> claim) {
+    public Credential {
+      claim = List.copyOf(claim);
+    }
   }
   public record StatusList(String uri, int idx) {
   }
@@ -95,5 +108,12 @@ public final class RegistrationDocuments {
       @JsonProperty("supervisory_authority") SupervisoryAuthority supervisoryAuthority,
       @JsonProperty("policy_id") List<String> policyId,
       @JsonProperty("certificate_policy") String certificatePolicy, Status status) {
+    public VerifierPayload {
+      description = List.copyOf(description);
+      entitlements = List.copyOf(entitlements);
+      purpose = List.copyOf(purpose);
+      credentials = List.copyOf(credentials);
+      policyId = List.copyOf(policyId);
+    }
   }
 }

@@ -19,8 +19,12 @@ public final class ArtifactWriter {
     Path temporary = null;
     try {
       Path absolute = path.toAbsolutePath();
-      Files.createDirectories(absolute.getParent());
-      temporary = Files.createTempFile(absolute.getParent(), ".wallet-pki-", ".tmp");
+      Path parent = absolute.getParent();
+      if (parent == null) {
+        throw new PkiCryptoException("Artifact path must name a file: " + path);
+      }
+      Files.createDirectories(parent);
+      temporary = Files.createTempFile(parent, ".wallet-pki-", ".tmp");
       Files.writeString(temporary, content);
       Files.move(temporary, absolute, StandardCopyOption.ATOMIC_MOVE,
           StandardCopyOption.REPLACE_EXISTING);

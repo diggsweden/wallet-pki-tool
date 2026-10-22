@@ -35,7 +35,6 @@ class EcosystemProvisionerTest {
     var provisioner = EcosystemFixture.provisioner();
     provisioner.initializeAuthorities(config, EcosystemFixture.quiet());
     provisioner.generate(config, List.of(), EcosystemFixture.quiet());
-    var outputDirectory = Path.of(config.outputDirectory());
     for (String relative : List.of("certificates/issuer/pid_issuer.p12",
         "certificates/wallet-provider/wallet_provider.p12",
         "certificates/verifier-access-certificate/verifier-access-certificate.p12",
