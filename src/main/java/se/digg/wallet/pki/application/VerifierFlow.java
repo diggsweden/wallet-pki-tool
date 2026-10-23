@@ -20,11 +20,10 @@ import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 /** Separate verifier access and registration flows retain their own CAs and aliases. */
 final class VerifierFlow {
   static void access(PkiConfiguration config, CertificateAuthority ca, ArtifactLayout layout,
-      Clock clock, char[] password, boolean rotate) throws Exception {
+      Clock clock, char[] password) throws Exception {
     var stores = new IdentityStores(clock);
     var access = config.verifier().access();
-    var key = stores.keyPair(layout.verifierAccessKeystore(), "verifier_access_certificate",
-        password, rotate);
+    var key = new se.digg.wallet.pki.crypto.EcKeyGenerator().generateKeyPair();
     var issuer = new CertificateProfileIssuer(new java.security.SecureRandom(),
         config.publicationBaseUrl(), clock);
     var subject = new CertificateSubject(access.commonName(), config.organization(),
@@ -38,22 +37,21 @@ final class VerifierFlow {
   }
 
   static void registration(PkiConfiguration config, CertificateAuthority ca, ArtifactLayout layout,
-      Clock clock, char[] password, boolean issue, boolean rotate) throws Exception {
+      Clock clock, char[] password) throws Exception {
     var stores = new IdentityStores(clock);
     var registration = config.verifier().registration();
-    if (issue) {
-      var key =
-          stores.keyPair(layout.verifierRegistrationKeystore(), "registration", password, rotate);
-      var issuer = new CertificateProfileIssuer(new java.security.SecureRandom(),
-          config.publicationBaseUrl(), clock);
-      var subject = new CertificateSubject(registration.commonName(), config.organization(),
-          SubjectAlternativeNames.empty());
-      var identity = new SigningIdentity(key,
-          issuer.issueRelyingPartyRegistrationCertificate(subject, key.getPublic(), ca));
-      stores.write(WalletRole.VERIFIER_REGISTRATION, identity, ca, layout, password);
-    }
+    var key =
+        new se.digg.wallet.pki.crypto.EcKeyGenerator().generateKeyPair();
+    var issuer = new CertificateProfileIssuer(new java.security.SecureRandom(),
+        config.publicationBaseUrl(), clock);
+    var subject = new CertificateSubject(registration.commonName(), config.organization(),
+        SubjectAlternativeNames.empty());
+    var identity = new SigningIdentity(key,
+        issuer.issueRelyingPartyRegistrationCertificate(subject, key.getPublic(), ca));
+    stores.write(WalletRole.VERIFIER_REGISTRATION, identity, ca, layout, password);
+
     new RegistrationDocuments(clock).writeVerifier(registration.registration(),
         config.organization(),
-        stores.read(layout.verifierRegistrationKeystore(), "registration", password), ca, layout);
+        identity, ca, layout);
   }
 }

@@ -7,12 +7,10 @@ package se.digg.wallet.pki.cli;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.nimbusds.jose.JWSObject;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
-import java.time.Clock;
-import java.time.Duration;
-import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,12 +18,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import se.digg.wallet.pki.TestEnvironment;
 import se.digg.wallet.pki.TestEnvironment.Result;
-import se.digg.wallet.pki.config.SecretResolver;
+import se.digg.wallet.pki.config.ConfigurationLoader;
+import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.domain.WalletRole;
 import se.digg.wallet.pki.infrastructure.ArtifactLayout;
-import se.digg.wallet.pki.storage.ArtifactStore;
 
 class WalletPkiCliComponentTest {
   @TempDir
@@ -37,26 +35,74 @@ class WalletPkiCliComponentTest {
     source = TestEnvironment.create(directory);
   }
 
-  private Result run(String operation, String... roles) {
-    return TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, operation,
-        source, roles);
+  private void initialize() {
+    var result = TestEnvironment.run("init-authorities", source);
+    assertThat(result.code()).withFailMessage(result.errors()).isZero();
   }
 
-  private Result ensure() {
-    var result = run("ensure");
+  private Result generate(String... args) {
+    var result = TestEnvironment.run("generate", source, args);
     assertThat(result.code()).withFailMessage(result.errors()).isZero();
     return result;
   }
 
-  private ArtifactLayout layout(Result result) {
-    return new ArtifactLayout(directory.resolve("state/generations/" + result.generation()),
-        result.bundle());
+  @Test
+  void generation_requires_explicit_authority_initialization() {
+    var result = TestEnvironment.run("generate", source);
+
+    assertThat(result.code()).isEqualTo(1);
+    assertThat(result.errors()).contains("init-authorities");
+    assertThat(directory.resolve("authorities")).doesNotExist();
+    assertThat(directory.resolve("generated")).doesNotExist();
   }
 
   @Test
-  void configured_roles_create_the_fixed_consumer_keystores() throws Exception {
-    var result = ensure();
-    var layout = layout(result);
+  void authority_initialization_needs_no_keystore_passwords() throws Exception {
+    Files.delete(directory.resolve("password.txt"));
+
+    var result = TestEnvironment.run("init-authorities", source);
+
+    assertThat(result.code()).withFailMessage(result.errors()).isZero();
+    assertThat(directory.resolve("authorities/pid-issuer/ca_private_key.pem")).exists();
+    assertThat(directory.resolve("generated")).doesNotExist();
+  }
+
+  @Test
+  void repeated_initialization_preserves_all_authority_files() throws Exception {
+    initialize();
+    Path root = directory.resolve("authorities/pid-issuer");
+    byte[] key = Files.readAllBytes(root.resolve("ca_private_key.pem"));
+    final byte[] certificate = Files.readAllBytes(root.resolve("ca.pem"));
+    final byte[] crl = Files.readAllBytes(root.resolve("revocation-list.pem"));
+
+    initialize();
+
+    assertThat(Files.readAllBytes(root.resolve("ca_private_key.pem"))).isEqualTo(key);
+    assertThat(Files.readAllBytes(root.resolve("ca.pem"))).isEqualTo(certificate);
+    assertThat(Files.readAllBytes(root.resolve("revocation-list.pem"))).isEqualTo(crl);
+  }
+
+  @Test
+  void incomplete_managed_authorities_are_never_replaced() throws Exception {
+    initialize();
+    Path root = directory.resolve("authorities/pid-issuer");
+    final byte[] certificate = Files.readAllBytes(root.resolve("ca.pem"));
+    Files.delete(root.resolve("ca_private_key.pem"));
+
+    var result = TestEnvironment.run("init-authorities", source);
+
+    assertThat(result.code()).isEqualTo(1);
+    assertThat(root.resolve("ca_private_key.pem")).doesNotExist();
+    assertThat(Files.readAllBytes(root.resolve("ca.pem"))).isEqualTo(certificate);
+  }
+
+  @Test
+  void generation_produces_the_fixed_consumer_keystores() throws Exception {
+    initialize();
+
+    var result = generate();
+
+    var layout = new ArtifactLayout(result.directory());
     for (WalletRole role : WalletRole.values()) {
       var store = TestEnvironment.keyStore(layout.keystore(role));
       assertThat(Collections.list(store.aliases())).contains(role.alias());
@@ -64,438 +110,274 @@ class WalletPkiCliComponentTest {
     }
     assertThat(Collections.list(TestEnvironment.keyStore(layout.pidKeystore()).aliases()))
         .containsExactlyInAnyOrder("pid_issuer", "nonce-encryption", "request-encryption");
-    assertThat(run("verify").code()).isZero();
+    assertThat(result.directory().resolve("manifest.json")).doesNotExist();
   }
 
   @Test
-  void ensure_reuses_the_generation_without_passwords() throws Exception {
-    final var first = ensure();
-    Files.delete(directory.resolve("password.txt"));
+  void each_generation_creates_fresh_participant_keys_and_preserves_the_ca() throws Exception {
+    initialize();
+    var first = generate();
+    var before = new ArtifactLayout(first.directory());
+    byte[] ca = Files.readAllBytes(directory.resolve("authorities/pid-issuer/ca.pem"));
 
-    var second = run("ensure");
+    var second = generate("--output", directory.resolve("another-output").toString());
 
-    assertThat(second.code()).withFailMessage(second.errors()).isZero();
-    assertThat(second.generation()).isEqualTo(first.generation());
-  }
-
-  @Test
-  void pid_renewal_preserves_all_three_keys() throws Exception {
-    final var first = ensure();
-    var before = TestEnvironment.keyStore(layout(first).pidKeystore());
-
-    var second = run("renew", "pid-issuer");
-
-    assertThat(second.code()).withFailMessage(second.errors()).isZero();
-    var after = TestEnvironment.keyStore(layout(second).pidKeystore());
+    var after = new ArtifactLayout(second.directory());
     for (String alias : List.of("pid_issuer", "nonce-encryption", "request-encryption")) {
-      assertThat(after.getCertificate(alias).getPublicKey())
-          .isEqualTo(before.getCertificate(alias).getPublicKey());
-      assertThat(after.getCertificate(alias)).isNotEqualTo(before.getCertificate(alias));
+      assertThat(TestEnvironment.keyStore(after.pidKeystore()).getCertificate(alias).getPublicKey())
+          .isNotEqualTo(
+              TestEnvironment.keyStore(before.pidKeystore()).getCertificate(alias).getPublicKey());
     }
+    assertThat(Files.readAllBytes(after.publication(WalletRole.PID_ISSUER).resolve("ca.pem")))
+        .isEqualTo(ca);
+    assertThat(Files.readAllBytes(directory.resolve("authorities/pid-issuer/ca.pem")))
+        .isEqualTo(ca);
   }
 
   @Test
-  void pid_rotation_replaces_all_three_keys() throws Exception {
-    final var first = ensure();
-    var before = TestEnvironment.keyStore(layout(first).pidKeystore());
+  void existing_output_directories_are_never_overwritten() throws Exception {
+    initialize();
+    var first = generate();
+    Path keystore = new ArtifactLayout(first.directory()).pidKeystore();
+    byte[] before = Files.readAllBytes(keystore);
 
-    var second = run("rotate", "pid-issuer");
-
-    assertThat(second.code()).withFailMessage(second.errors()).isZero();
-    var after = TestEnvironment.keyStore(layout(second).pidKeystore());
-    for (String alias : List.of("pid_issuer", "nonce-encryption", "request-encryption")) {
-      assertThat(after.getCertificate(alias).getPublicKey())
-          .isNotEqualTo(before.getCertificate(alias).getPublicKey());
-    }
-    var registration = JWSObject.parse(Files.readString(layout(second).pidRegistration()));
-    assertThat(registration.getHeader().getX509CertChain().getFirst().decode())
-        .isEqualTo(after.getCertificate("pid_issuer").getEncoded());
-  }
-
-  @Test
-  void participant_rotation_preserves_authorities_and_unrelated_artifacts() throws Exception {
-    final var first = ensure();
-    var before = layout(first);
-
-    var second = run("rotate", "wallet-provider");
-
-    assertThat(second.code()).withFailMessage(second.errors()).isZero();
-    var after = layout(second);
-    assertThat(Files.readAllBytes(after.pidKeystore()))
-        .isEqualTo(Files.readAllBytes(before.pidKeystore()));
-    assertThat(Files.readAllBytes(after.lote())).isEqualTo(Files.readAllBytes(before.lote()));
-    assertThat(Files.readAllBytes(after.publication(WalletRole.WALLET_PROVIDER).resolve("ca.pem")))
-        .isEqualTo(
-            Files.readAllBytes(before.publication(WalletRole.WALLET_PROVIDER).resolve("ca.pem")));
-    assertThat(TestEnvironment.keyStore(after.walletKeystore()).getCertificate("wallet_provider")
-        .getPublicKey())
-        .isNotEqualTo(TestEnvironment.keyStore(before.walletKeystore())
-            .getCertificate("wallet_provider").getPublicKey());
-  }
-
-  @Test
-  void trust_signer_rotation_rebuilds_both_trust_documents() throws Exception {
-    final var first = ensure();
-
-    var second = run("rotate", "trust-source");
-
-    assertThat(second.code()).withFailMessage(second.errors()).isZero();
-    var layout = layout(second);
-    var signer =
-        TestEnvironment.keyStore(layout.trustSignerKeystore()).getCertificate("trust_source");
-    assertThat(Files.readString(layout.lote()))
-        .isNotEqualTo(Files.readString(layout(first).lote()));
-    for (Path path : List.of(layout.lote(), layout.statusList())) {
-      assertThat(JWSObject.parse(Files.readString(path)).getHeader().getX509CertChain().getFirst()
-          .decode()).isEqualTo(signer.getEncoded());
-    }
-    assertThat(loteSequence(second)).isEqualTo(loteSequence(first) + 1);
-  }
-
-  @Test
-  void due_documents_are_refreshed_without_reissuing_identity_certificates() throws Exception {
-    final var first = ensure();
-    Clock later =
-        Clock.fixed(TestEnvironment.CLOCK.instant().plus(Duration.ofDays(340)), ZoneOffset.UTC);
-
-    var second = TestEnvironment.run(new SecretResolver(), later, "ensure", source);
-
-    assertThat(second.code()).withFailMessage(second.errors()).isZero();
-    for (WalletRole role : WalletRole.values()) {
-      assertThat(Files.readAllBytes(layout(second).keystore(role)))
-          .isEqualTo(Files.readAllBytes(layout(first).keystore(role)));
-    }
-    assertThat(loteSequence(second)).isEqualTo(loteSequence(first) + 1);
-  }
-
-  @Test
-  void missing_secrets_fail_before_creating_private_state() throws Exception {
-    Files.delete(directory.resolve("password.txt"));
-
-    var result = run("ensure");
+    var result = TestEnvironment.run("generate", source);
 
     assertThat(result.code()).isEqualTo(1);
-    assertThat(directory.resolve("state")).doesNotExist();
-    assertThat(directory.resolve("bundles")).doesNotExist();
+    assertThat(result.errors()).contains("Output already exists");
+    assertThat(Files.readAllBytes(keystore)).isEqualTo(before);
   }
 
   @Test
-  void failed_document_generation_preserves_the_current_bundle() throws Exception {
-    final var first = ensure();
+  void even_empty_output_directories_require_an_explicit_fresh_destination() throws Exception {
+    initialize();
+    Files.createDirectory(directory.resolve("generated"));
+
+    var result = TestEnvironment.run("generate", source);
+
+    assertThat(result.code()).isEqualTo(1);
+    assertThat(result.errors()).contains("fresh directory");
+  }
+
+  @Test
+  void pid_registration_is_signed_by_the_exported_pid_key() throws Exception {
+    initialize();
+    var result = generate("pid-issuer");
+    var layout = new ArtifactLayout(result.directory());
+    var store = TestEnvironment.keyStore(layout.pidKeystore());
+
+    var jwt = JWSObject.parse(Files.readString(layout.pidRegistration()));
+
+    assertThat(jwt.verify(new ECDSAVerifier(
+        (java.security.interfaces.ECPublicKey) store.getCertificate("pid_issuer").getPublicKey())))
+        .isTrue();
+    assertThat(jwt.getHeader().getX509CertChain().getFirst().decode())
+        .isEqualTo(store.getCertificate("pid_issuer").getEncoded());
+    assertThat(result.directory().resolve("private/certificates/wallet-provider")).doesNotExist();
+  }
+
+  @Test
+  void verifier_registration_exports_the_same_signed_token_to_the_environment_file()
+      throws Exception {
+    initialize();
+    var result = generate("verifier-registration");
+    var layout = new ArtifactLayout(result.directory());
+
+    var jwt = JWSObject.parse(Files.readString(layout.verifierRegistration()));
+
+    assertThat(Files.readString(layout.verifierEnvironment()))
+        .isEqualTo("VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + jwt.serialize() + "\n");
+    assertThat(jwt.getHeader().getX509CertChain()).hasSize(2);
+    assertThat(jwt.getHeader().getX509CertChain().getFirst().decode())
+        .isEqualTo(TestEnvironment.keyStore(layout.verifierRegistrationKeystore())
+            .getCertificate("registration").getEncoded());
+  }
+
+  @Test
+  void trust_documents_use_the_dedicated_signer_and_configured_sequence() throws Exception {
+    initialize();
     Files.writeString(source,
-        Files.readString(source).replace("validityDays: 365", "validityDays: 1"));
+        Files.readString(source).replace("sequenceNumber: 1", "sequenceNumber: 7"));
 
-    var failed = run("ensure");
+    var result = generate("trust-source");
 
-    assertThat(failed.code()).isEqualTo(1);
-    assertThat(directory.resolve("bundles/current").toRealPath()).isEqualTo(first.bundle());
-    for (Path parent : List.of(directory.resolve("state/generations"),
-        directory.resolve("bundles/generations"))) {
-      try (var paths = Files.list(parent)) {
-        assertThat(paths.map(p -> p.getFileName().toString()))
-            .noneMatch(p -> p.startsWith(".staging-"));
-      }
+    var layout = new ArtifactLayout(result.directory());
+    var certificate =
+        TestEnvironment.keyStore(layout.trustSignerKeystore()).getCertificate("trust_source");
+    for (Path path : List.of(layout.lote(), layout.statusList())) {
+      var jwt = JWSObject.parse(Files.readString(path));
+      assertThat(jwt.verify(
+          new ECDSAVerifier((java.security.interfaces.ECPublicKey) certificate.getPublicKey())))
+          .isTrue();
+      assertThat(jwt.getHeader().getX509CertChain().getFirst().decode())
+          .isEqualTo(certificate.getEncoded());
     }
-  }
-
-  @Test
-  void tampered_files_fail_verification() throws Exception {
-    final var first = ensure();
-    Files.writeString(layout(first).pidRegistration(), "tampered");
-
-    var result = run("verify");
-
-    assertThat(result.code()).isEqualTo(1);
-    assertThat(result.errors()).contains("digest mismatch");
-  }
-
-  @Test
-  void unmanifested_files_fail_verification() throws Exception {
-    final var first = ensure();
-    Files.writeString(first.bundle().resolve("public/unexpected.txt"), "extra");
-
-    var result = run("verify");
-
-    assertThat(result.code()).isEqualTo(1);
-    assertThat(result.errors()).contains("unmanifested file");
-  }
-
-  @Test
-  void private_exports_use_owner_only_permissions() throws Exception {
-    var result = ensure();
-
-    assertThat(Files.getPosixFilePermissions(layout(result).walletKeystore()))
-        .isEqualTo(PosixFilePermissions.fromString("rw-------"));
-  }
-
-  @Test
-  void rotation_requires_an_explicit_wallet_role() {
-    var result = run("rotate");
-
-    assertThat(result.code()).isEqualTo(1);
-    assertThat(result.errors()).contains("explicit wallet roles");
-    assertThat(directory.resolve("state")).doesNotExist();
-  }
-
-  @Test
-  void arbitrary_resource_targets_are_rejected() {
-    var result = run("ensure", "identity:pid-issuer");
-
-    assertThat(result.code()).isEqualTo(1);
-    assertThat(result.errors()).contains("Unknown wallet role");
-  }
-
-  @Test
-  void supplied_authorities_allow_provisioning_one_wallet_role() throws Exception {
-    final var local = ensure();
-    var imported = TestEnvironment.importedWalletProvider(directory, source, local.generation());
-
-    var result = TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure",
-        imported, "wallet-provider");
-
-    assertThat(result.code()).withFailMessage(result.errors()).isZero();
-    assertThat(result.bundle().resolve("private/certificates/wallet-provider/wallet_provider.p12"))
-        .exists();
-    assertThat(result.bundle().resolve("private/certificates/issuer/pid_issuer.p12"))
-        .doesNotExist();
-    assertThat(directory.resolve("imported-state/generations/" + result.generation()
-        + "/authorities/wallet-provider/ca_private_key.pem")).doesNotExist();
-    assertThat(TestEnvironment
-        .run(new SecretResolver(), TestEnvironment.CLOCK, "verify", imported).code())
-        .isZero();
-  }
-
-  @Test
-  void imported_trust_anchors_are_pinned_after_first_use() throws Exception {
-    final var local = ensure();
-    var imported = TestEnvironment.importedWalletProvider(directory, source, local.generation());
-    var first =
-        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
-    assertThat(first.code()).withFailMessage(first.errors()).isZero();
-    var manager = new CertificateAuthorityManager(new EcKeyGenerator(),
-        new java.security.SecureRandom(), TestEnvironment.CLOCK);
-    manager.saveAuthority(manager.createAuthority("wallet-provider", "Replacement root"),
-        directory.resolve("imports"));
-
-    var changed =
-        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
-
-    assertThat(changed.code()).isEqualTo(1);
-    assertThat(changed.errors()).contains("Trust anchor changed");
-    assertThat(directory.resolve("imported-bundles/current").toRealPath())
-        .isEqualTo(first.bundle());
-  }
-
-  @Test
-  void missing_persistent_managed_keys_are_never_recreated() throws Exception {
-    final var local = ensure();
-    Files.delete(layout(local).authority(WalletRole.PID_ISSUER).resolve("ca_private_key.pem"));
-
-    var result = run("ensure");
-
-    assertThat(result.code()).isEqualTo(1);
-    assertThat(directory.resolve("bundles/current").toRealPath()).isEqualTo(local.bundle());
+    var payload = TestEnvironment.JSON
+        .readTree(JWSObject.parse(Files.readString(layout.lote())).getPayload().toString());
+    assertThat(
+        payload.path("LoTE").path("ListAndSchemeInformation").path("LoTESequenceNumber").asInt())
+        .isEqualTo(7);
+    assertThat(payload.path("LoTE").path("TrustedEntitiesList")).hasSize(4);
   }
 
   @Test
   void selected_roles_do_not_resolve_unrelated_passwords() throws Exception {
-    final var local = ensure();
+    initialize();
     String yaml = Files.readString(source).replace("file: password.txt", "env: UNAVAILABLE");
-    yaml = yaml.replaceFirst("env: UNAVAILABLE", "file: password.txt");
-    Files.writeString(source, yaml);
+    Files.writeString(source, yaml.replaceFirst("env: UNAVAILABLE", "file: password.txt"));
 
-    var result = run("rotate", "pid-issuer");
+    var result = TestEnvironment.run("generate", source, "pid-issuer");
 
     assertThat(result.code()).withFailMessage(result.errors()).isZero();
-    assertThat(Files.readAllBytes(layout(result).walletKeystore()))
-        .isEqualTo(Files.readAllBytes(layout(local).walletKeystore()));
   }
 
   @Test
-  void trust_source_uses_only_public_participant_authorities() throws Exception {
-    final var local = ensure();
-    var imported = TestEnvironment.importedTrustSource(directory, source, local.generation());
-    for (WalletRole role : WalletRole.values()) {
-      if (role != WalletRole.TRUST_SOURCE) {
-        Files.delete(layout(local).authority(role).resolve("ca_private_key.pem"));
-      }
+  void missing_passwords_do_not_publish_an_output_directory() throws Exception {
+    initialize();
+    Files.delete(directory.resolve("password.txt"));
+
+    var result = TestEnvironment.run("generate", source);
+
+    assertThat(result.code()).isEqualTo(1);
+    assertThat(directory.resolve("generated")).doesNotExist();
+    try (var entries = Files.list(directory)) {
+      assertThat(entries.map(p -> p.getFileName().toString()))
+          .noneMatch(name -> name.startsWith(".wallet-pki-"));
     }
-
-    var result =
-        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
-
-    assertThat(result.code()).withFailMessage(result.errors()).isZero();
-    assertThat(result.bundle().resolve("public/trust-source/signed/trusted-entities.json"))
-        .exists();
-    assertThat(result.bundle().resolve("private/certificates/issuer/pid_issuer.p12"))
-        .doesNotExist();
-    assertThat(TestEnvironment
-        .run(new SecretResolver(), TestEnvironment.CLOCK, "verify", imported).code())
-        .isZero();
   }
 
   @Test
-  void supplied_crls_preserve_revocation_entries_without_reissuing_keys() throws Exception {
-    final var local = ensure();
-    var imported = TestEnvironment.importedWalletProvider(directory, source, local.generation());
-    var first =
-        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
-    assertThat(first.code()).withFailMessage(first.errors()).isZero();
+  void private_outputs_are_readable_only_by_the_owner() throws Exception {
+    initialize();
+    var result = generate();
+
+    assertThat(
+        Files.getPosixFilePermissions(new ArtifactLayout(result.directory()).walletKeystore()))
+        .isEqualTo(PosixFilePermissions.fromString("rw-------"));
+  }
+
+  @Test
+  void supplied_authorities_allow_independent_wallet_provider_generation() throws Exception {
+    initialize();
+    final var supplied = TestEnvironment.importedWalletProvider(directory, source);
+
+    var result = TestEnvironment.run("generate", supplied);
+
+    assertThat(result.code()).withFailMessage(result.errors()).isZero();
+    var layout = new ArtifactLayout(result.directory());
+    assertThat(layout.walletKeystore()).exists();
+    assertThat(layout.pidKeystore()).doesNotExist();
+    assertThat(Files.readAllBytes(layout.publication(WalletRole.WALLET_PROVIDER).resolve("ca.pem")))
+        .isEqualTo(Files.readAllBytes(directory.resolve("inputs/ca.pem")));
+    try (var files = Files.walk(result.directory())) {
+      assertThat(files.map(p -> p.getFileName().toString())).doesNotContain("ca_private_key.pem");
+    }
+  }
+
+  @Test
+  void supplied_revocation_entries_are_published_unchanged() throws Exception {
+    initialize();
+    final var supplied = TestEnvironment.importedWalletProvider(directory, source);
     var keys = new EcKeyGenerator();
     var manager = new CertificateAuthorityManager();
-    var certificate = manager.readCertificatePem(directory.resolve("imports/ca.pem"));
-    var key = keys.readPrivateKeyPem(directory.resolve("imports/ca_private_key.pem"));
+    var certificate = manager.readCertificatePem(directory.resolve("inputs/ca.pem"));
+    var key = keys.readPrivateKeyPem(directory.resolve("inputs/ca_private_key.pem"));
     var now = TestEnvironment.CLOCK.instant();
     var builder = new org.bouncycastle.cert.jcajce.JcaX509v2CRLBuilder(
         certificate.getSubjectX500Principal(), java.util.Date.from(now.minusSeconds(60)));
-    builder.setNextUpdate(java.util.Date.from(now.plus(Duration.ofDays(365))));
+    builder.setNextUpdate(java.util.Date.from(now.plus(java.time.Duration.ofDays(365))));
     builder.addCRLEntry(java.math.BigInteger.valueOf(123),
         java.util.Date.from(now.minusSeconds(120)), 1);
     var signer =
         new org.bouncycastle.operator.jcajce.JcaContentSignerBuilder("SHA256withECDSA").build(key);
     var crl = new org.bouncycastle.cert.jcajce.JcaX509CRLConverter().getCRL(builder.build(signer));
-    keys.writePemFile(crl, directory.resolve("imports/revocation-list.pem"));
-    Files.delete(directory.resolve("password.txt"));
+    keys.writePemFile(crl, directory.resolve("inputs/revocation-list.pem"));
 
-    var result =
-        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
+    var result = TestEnvironment.run("generate", supplied);
 
     assertThat(result.code()).withFailMessage(result.errors()).isZero();
-    var published = manager.readCrlPem(
-        result.bundle().resolve("public/trust-source/wallet-provider/revocation-list.pem"));
+    var published = manager.readCrlPem(new ArtifactLayout(result.directory())
+        .publication(WalletRole.WALLET_PROVIDER).resolve("revocation-list.pem"));
+    assertThat(published.getEncoded()).isEqualTo(crl.getEncoded());
     assertThat(published.getRevokedCertificate(java.math.BigInteger.valueOf(123))).isNotNull();
-    String store = "private/certificates/wallet-provider/wallet_provider.p12";
-    assertThat(Files.readAllBytes(result.bundle().resolve(store)))
-        .isEqualTo(Files.readAllBytes(first.bundle().resolve(store)));
   }
 
   @Test
-  void concurrent_state_writers_are_rejected() throws Exception {
-    final var first = ensure();
-    var store = new ArtifactStore(new se.digg.wallet.pki.config.ConfigurationLoader().load(source));
-    try (var lock = store.lock()) {
-      assertThat(lock.lock().isValid()).isTrue();
+  void missing_supplied_private_keys_fail_without_initializing_new_roots() throws Exception {
+    initialize();
+    final var supplied = TestEnvironment.importedWalletProvider(directory, source);
+    Files.delete(directory.resolve("inputs/ca_private_key.pem"));
 
-      var result = run("rotate", "pid-issuer");
-
-      assertThat(result.code()).isEqualTo(1);
-      assertThat(directory.resolve("bundles/current").toRealPath()).isEqualTo(first.bundle());
-    }
-  }
-
-  @Test
-  void lost_current_pointers_never_bootstrap_replacement_authorities() throws Exception {
-    ensure();
-    Files.delete(directory.resolve("bundles/current"));
-
-    var result = run("ensure");
+    var result = TestEnvironment.run("generate", supplied);
 
     assertThat(result.code()).isEqualTo(1);
-    assertThat(result.errors()).contains("restore the pointer");
+    assertThat(directory.resolve("unused-authorities")).doesNotExist();
+    assertThat(directory.resolve("imported-output")).doesNotExist();
   }
 
   @Test
-  void changed_managed_authority_subjects_require_coordinated_rollover() throws Exception {
-    final var first = ensure();
-    Files.writeString(source,
-        Files.readString(source).replace("DIGG Wallet PID Issuer CA", "Replacement PID root"));
-
-    var result = run("ensure");
-
-    assertThat(result.code()).isEqualTo(1);
-    assertThat(result.errors()).contains("authority subject changed");
-    assertThat(directory.resolve("bundles/current").toRealPath()).isEqualTo(first.bundle());
-  }
-
-  @Test
-  void verifier_registration_exports_match_the_current_signing_identity() throws Exception {
-    final var first = ensure();
-
-    var second = run("rotate", "verifier-registration");
-
-    assertThat(second.code()).withFailMessage(second.errors()).isZero();
-    var layout = layout(second);
-    var jwt = JWSObject.parse(Files.readString(layout.verifierRegistration()));
-    assertThat(jwt.getHeader().getX509CertChain().getFirst().decode())
-        .isEqualTo(TestEnvironment.keyStore(layout.verifierRegistrationKeystore())
-            .getCertificate("registration").getEncoded());
-    assertThat(Files.readString(layout.verifierEnvironment()))
-        .isEqualTo("VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + jwt.serialize() + "\n");
-    assertThat(Files.readAllBytes(layout.pidKeystore()))
-        .isEqualTo(Files.readAllBytes(layout(first).pidKeystore()));
-  }
-
-  @Test
-  void expired_identity_certificates_are_renewed_without_replacing_keys() throws Exception {
-    final var first = ensure();
-    Clock later =
-        Clock.fixed(TestEnvironment.CLOCK.instant().plus(Duration.ofDays(830)), ZoneOffset.UTC);
-
-    var result = TestEnvironment.run(new SecretResolver(), later, "ensure", source);
-
-    assertThat(result.code()).withFailMessage(result.errors()).isZero();
+  void trust_source_generation_needs_only_public_participant_authorities() throws Exception {
+    initialize();
+    final var supplied = TestEnvironment.importedTrustSource(directory, source);
     for (WalletRole role : WalletRole.values()) {
-      assertThat(TestEnvironment.keyStore(layout(result).keystore(role))
-          .getCertificate(role.alias()).getPublicKey())
-          .isEqualTo(TestEnvironment.keyStore(layout(first).keystore(role))
-              .getCertificate(role.alias()).getPublicKey());
+      if (role != WalletRole.TRUST_SOURCE) {
+        Files.delete(directory.resolve("authorities/" + role.directory() + "/ca_private_key.pem"));
+      }
     }
-  }
 
-  @org.junit.jupiter.params.ParameterizedTest
-  @org.junit.jupiter.params.provider.ValueSource(strings = {"alpha", "beta"})
-  void managed_single_role_provisioning_is_independent_of_deployment_labels(String label)
-      throws Exception {
-    var full = new se.digg.wallet.pki.config.ConfigurationLoader().load(source);
-    var single = new se.digg.wallet.pki.config.PkiConfiguration(2, label,
-        full.stateDirectory(), full.outputDirectory(), full.publicationBaseUrl(),
-        full.organization(),
-        null, full.walletProvider(), null, null);
-    Files.writeString(source, ArtifactStore.JSON.writeValueAsString(single));
-
-    var result = run("ensure");
+    var result = TestEnvironment.run("generate", supplied);
 
     assertThat(result.code()).withFailMessage(result.errors()).isZero();
-    assertThat(layout(result).walletKeystore()).exists();
-    assertThat(layout(result).pidKeystore()).doesNotExist();
-    assertThat(layout(result).authority(WalletRole.WALLET_PROVIDER).resolve("ca_private_key.pem"))
-        .exists();
-    assertThat(run("verify").code()).isZero();
+    assertThat(new ArtifactLayout(result.directory()).lote()).exists();
+    assertThat(new ArtifactLayout(result.directory()).pidKeystore()).doesNotExist();
   }
 
   @Test
-  void missing_supplied_private_keys_never_create_replacement_authorities() throws Exception {
-    var local = ensure();
-    var imported = TestEnvironment.importedWalletProvider(directory, source, local.generation());
-    Files.delete(directory.resolve("imports/ca_private_key.pem"));
+  void short_lived_documents_are_generated_without_renewal_policy() throws Exception {
+    initialize();
+    Files.writeString(source,
+        Files.readString(source).replace("validityDays: 365", "validityDays: 1"));
 
-    var result =
-        TestEnvironment.run(new SecretResolver(), TestEnvironment.CLOCK, "ensure", imported);
+    var result = TestEnvironment.run("generate", source);
+
+    assertThat(result.code()).withFailMessage(result.errors()).isZero();
+  }
+
+  @Test
+  void any_subset_of_managed_roles_can_be_initialized_and_generated() throws Exception {
+    var full = new ConfigurationLoader().load(source);
+    var single = new PkiConfiguration(full.authorityDirectory(), full.outputDirectory(),
+        full.publicationBaseUrl(), full.organization(), null, full.walletProvider(), null, null);
+    TestEnvironment.save(source, single);
+
+    initialize();
+    var result = generate();
+
+    assertThat(new ArtifactLayout(result.directory()).walletKeystore()).exists();
+    assertThat(directory.resolve("authorities/pid-issuer")).doesNotExist();
+  }
+
+  @Test
+  void output_overrides_cannot_overlap_managed_authorities() {
+    initialize();
+
+    var result = TestEnvironment.run("generate", source, "--output",
+        directory.resolve("authorities/nested").toString());
 
     assertThat(result.code()).isEqualTo(1);
-    assertThat(directory.resolve("imported-state")).doesNotExist();
-    assertThat(directory.resolve("imported-bundles")).doesNotExist();
+    assertThat(result.errors()).contains("separate and non-nested");
   }
 
   @Test
-  void legacy_manifest_metadata_preserves_the_committed_generation() throws Exception {
-    var first = ensure();
-    var manifest = (tools.jackson.databind.node.ObjectNode) ArtifactStore.JSON.readTree(
-        Files.readString(first.bundle().resolve("manifest.json")));
-    manifest.put("workflow", "legacy-mode");
-    String contents = ArtifactStore.JSON.writeValueAsString(manifest);
-    Files.writeString(first.bundle().resolve("manifest.json"), contents);
-    Files.writeString(layout(first).state().resolve("manifest.json"), contents);
+  void unknown_roles_fail_before_authority_initialization() {
+    var result = TestEnvironment.run("init-authorities", source, "identity:pid-issuer");
 
-    var result = run("ensure");
-
-    assertThat(result.code()).withFailMessage(result.errors()).isZero();
-    assertThat(result.generation()).isEqualTo(first.generation());
-    assertThat(run("verify").code()).isZero();
+    assertThat(result.code()).isEqualTo(1);
+    assertThat(directory.resolve("authorities")).doesNotExist();
   }
 
   @Test
-  void help_exposes_wallet_operations_directly() {
+  void help_exposes_initialization_and_generation() {
     var output = new java.io.StringWriter();
     var cli = new WalletPkiCli(new java.io.PrintWriter(output),
         new java.io.PrintWriter(new java.io.StringWriter()));
@@ -503,12 +385,6 @@ class WalletPkiCliComponentTest {
     int result = cli.execute("--help");
 
     assertThat(result).isZero();
-    assertThat(output.toString()).contains("ensure", "renew", "rotate", "verify");
-  }
-
-  private int loteSequence(Result result) throws Exception {
-    return ArtifactStore.JSON
-        .readTree(JWSObject.parse(Files.readString(layout(result).lote())).getPayload().toString())
-        .path("LoTE").path("ListAndSchemeInformation").path("LoTESequenceNumber").asInt();
+    assertThat(output.toString()).contains("init-authorities", "generate");
   }
 }

@@ -10,20 +10,15 @@ import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.WalletRole;
 
 /** Environment values for the wallet roles; profiles, aliases and exports are fixed in code. */
-public record PkiConfiguration(int schemaVersion, String environment, String stateDirectory,
-    String outputDirectory, String publicationBaseUrl, Organization organization,
+public record PkiConfiguration(String authorityDirectory, String outputDirectory,
+    String publicationBaseUrl, Organization organization,
     PidIssuerConfig pidIssuer, WalletProviderConfig walletProvider, VerifierConfig verifier,
     TrustSourceConfig trustSource) {
   public PkiConfiguration {
-    if (schemaVersion != 2) {
-      throw new IllegalArgumentException(
-          "schemaVersion must be 2; migrate legacy configuration to named wallet roles");
-    }
-    if (environment == null || !environment.matches("[a-z][a-z0-9-]*")) {
-      throw new IllegalArgumentException("environment must match [a-z][a-z0-9-]*");
-    }
-    Checks.text(stateDirectory, "stateDirectory");
-    Checks.text(outputDirectory, "outputDirectory");
+    authorityDirectory = authorityDirectory == null ? ".wallet-pki/authorities"
+        : Checks.text(authorityDirectory, "authorityDirectory");
+    outputDirectory =
+        outputDirectory == null ? "generated" : Checks.text(outputDirectory, "outputDirectory");
     Checks.httpUrl(publicationBaseUrl, "publicationBaseUrl");
     Checks.required(organization, "organization");
     if (pidIssuer == null && walletProvider == null && verifier == null && trustSource == null) {
@@ -49,16 +44,6 @@ public record PkiConfiguration(int schemaVersion, String environment, String sta
       roles.add(WalletRole.TRUST_SOURCE);
     }
     return roles;
-  }
-
-  public Object settings(WalletRole role) {
-    return switch (role) {
-      case PID_ISSUER -> pidIssuer;
-      case WALLET_PROVIDER -> walletProvider;
-      case VERIFIER_ACCESS -> verifier.access();
-      case VERIFIER_REGISTRATION -> verifier.registration();
-      case TRUST_SOURCE -> trustSource;
-    };
   }
 
   public AuthorityConfig authority(WalletRole role) {

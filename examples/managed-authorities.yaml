@@ -2,11 +2,9 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-schemaVersion: 2
-environment: local
 publicationBaseUrl: http://trust-source
-stateDirectory: ../.wallet-pki/local/state
-outputDirectory: ../.wallet-pki/local/bundles
+authorityDirectory: ../.wallet-pki/authorities
+outputDirectory: ../generated/participants
 
 organization:
   name: DIGG
@@ -98,6 +96,7 @@ trustSource:
     keystorePassword:
       env: TRUST_SOURCE_KEYSTORE_PASSWORD
   lote:
+    sequenceNumber: 1
     name: Local LoTE
     validityDays: 365
     trustedAuthorities:

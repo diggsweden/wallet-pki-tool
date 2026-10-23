@@ -7,10 +7,11 @@ package se.digg.wallet.pki.config;
 import se.digg.wallet.pki.domain.Checks;
 
 /** Four named trust anchors, without arbitrary references or inferred service types. */
-public record LoteConfig(String name, int validityDays,
+public record LoteConfig(String name, int sequenceNumber, int validityDays,
     TrustedAuthorities trustedAuthorities) {
   public LoteConfig {
     Checks.text(name, "lote.name");
+    Checks.positive(sequenceNumber, "lote.sequenceNumber");
     Checks.positive(validityDays, "lote.validityDays");
     Checks.required(trustedAuthorities, "lote.trustedAuthorities");
   }

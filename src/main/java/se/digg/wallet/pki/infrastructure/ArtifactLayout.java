@@ -8,15 +8,7 @@ import java.nio.file.Path;
 import se.digg.wallet.pki.domain.WalletRole;
 
 /** Fixed artifact paths for wallet-role consumers. */
-public record ArtifactLayout(Path state, Path output) {
-  public Path authority(WalletRole role) {
-    return state.resolve("authorities/" + role.directory());
-  }
-
-  public Path certificate(WalletRole role) {
-    return state.resolve("identities/" + role.argument() + ".pem");
-  }
-
+public record ArtifactLayout(Path output) {
   public Path publication(WalletRole role) {
     return output.resolve("public/trust-source/" + role.directory());
   }

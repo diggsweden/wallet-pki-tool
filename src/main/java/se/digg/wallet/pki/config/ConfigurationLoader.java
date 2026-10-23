@@ -51,11 +51,11 @@ public class ConfigurationLoader {
       }
       Path base = source.toAbsolutePath().normalize().getParent();
       PkiConfiguration resolved = resolve(base, config);
-      Path state = Path.of(resolved.stateDirectory());
+      Path authorities = Path.of(resolved.authorityDirectory());
       Path output = Path.of(resolved.outputDirectory());
-      if (state.startsWith(output) || output.startsWith(state)) {
+      if (authorities.startsWith(output) || output.startsWith(authorities)) {
         throw new PkiConfigurationException(
-            "State and output directories must be separate and non-nested");
+            "Authority and output directories must be separate and non-nested");
       }
       return resolved;
     } catch (IOException | RuntimeException e) {
@@ -72,7 +72,7 @@ public class ConfigurationLoader {
     var wallet = c.walletProvider();
     var verifier = c.verifier();
     var trust = c.trustSource();
-    return new PkiConfiguration(c.schemaVersion(), c.environment(), path(base, c.stateDirectory()),
+    return new PkiConfiguration(path(base, c.authorityDirectory()),
         path(base, c.outputDirectory()), c.publicationBaseUrl(), c.organization(),
         pid == null ? null
             : new PidIssuerConfig(authority(base, pid.authority()), pid.signing(),
@@ -103,9 +103,10 @@ public class ConfigurationLoader {
 
   private static LoteConfig lote(Path base, LoteConfig c) {
     var a = c.trustedAuthorities();
-    return new LoteConfig(c.name(), c.validityDays(), new LoteConfig.TrustedAuthorities(
-        entity(base, a.pidIssuer()), entity(base, a.walletProvider()),
-        entity(base, a.verifierAccess()), entity(base, a.verifierRegistration())));
+    return new LoteConfig(c.name(), c.sequenceNumber(), c.validityDays(),
+        new LoteConfig.TrustedAuthorities(
+            entity(base, a.pidIssuer()), entity(base, a.walletProvider()),
+            entity(base, a.verifierAccess()), entity(base, a.verifierRegistration())));
   }
 
   private static LoteConfig.Entity entity(Path base, LoteConfig.Entity e) {

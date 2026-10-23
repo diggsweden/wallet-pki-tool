@@ -15,10 +15,10 @@ import se.digg.wallet.pki.infrastructure.IdentityStores;
 
 /** Owns the wallet attestation signing certificate and wallet_provider keystore entry. */
 final class WalletProviderFlow {
-  static void provision(PkiConfiguration config, CertificateAuthority ca, ArtifactLayout layout,
-      Clock clock, char[] password, boolean rotate) throws Exception {
+  static void generate(PkiConfiguration config, CertificateAuthority ca, ArtifactLayout layout,
+      Clock clock, char[] password) throws Exception {
     var stores = new IdentityStores(clock);
-    var key = stores.keyPair(layout.walletKeystore(), "wallet_provider", password, rotate);
+    var key = new se.digg.wallet.pki.crypto.EcKeyGenerator().generateKeyPair();
     var issuer = new CertificateProfileIssuer(new java.security.SecureRandom(),
         config.publicationBaseUrl(), clock);
     var certificate = issuer.issueWalletSigningCertificate(

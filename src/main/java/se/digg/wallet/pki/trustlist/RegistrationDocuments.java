@@ -11,7 +11,6 @@ import java.nio.file.Path;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import se.digg.wallet.pki.config.PidIssuerConfig;
@@ -154,13 +153,6 @@ public final class RegistrationDocuments {
       throw new PkiCryptoException("Signed payload differs from configured wallet contract");
     }
   }
-
-  public static Instant expiresAt(Path path) throws Exception {
-    var payload = JsonMapper.builder().build()
-        .readTree(JWSObject.parse(Files.readString(path)).getPayload().toString());
-    return Instant.ofEpochSecond(payload.path("exp").asLong());
-  }
-
 
   public record PidPayload(String iss, String sub, long iat, long exp) {
   }

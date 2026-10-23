@@ -2,10 +2,7 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-schemaVersion: 2
-environment: shared-test
-stateDirectory: ../.wallet-pki/shared-test/state
-outputDirectory: ../.wallet-pki/shared-test/bundles
+outputDirectory: ../generated/wallet-provider
 publicationBaseUrl: https://trust.example.test
 
 organization:

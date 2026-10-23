@@ -5,9 +5,7 @@
 package se.digg.wallet.pki.infrastructure;
 
 import java.io.ByteArrayOutputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.KeyPair;
 import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.Signature;
@@ -18,14 +16,11 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.Set;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
-import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
-import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.crypto.KeystoreManager;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
 import se.digg.wallet.pki.domain.PidIssuerMaterial;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.domain.WalletRole;
-import se.digg.wallet.pki.storage.ArtifactStore;
 
 /** Shared PKCS12 mechanics; wallet flows own the profile recipes and aliases. */
 public final class IdentityStores {
@@ -36,31 +31,11 @@ public final class IdentityStores {
     this.clock = clock;
   }
 
-  public KeyPair keyPair(Path path, String alias, char[] password, boolean rotate)
-      throws Exception {
-    if (rotate || !Files.exists(path)) {
-      return new EcKeyGenerator().generateKeyPair();
-    }
-    return read(path, alias, password).keyPair();
-  }
-
-  public SigningIdentity read(Path path, String alias, char[] password) throws Exception {
-    KeyStore store = stores.loadKeyStore(path, password);
-    if (!store.isKeyEntry(alias)) {
-      throw new PkiCryptoException("Missing identity alias: " + alias);
-    }
-    var certificate = (X509Certificate) store.getCertificate(alias);
-    return new SigningIdentity(
-        new KeyPair(certificate.getPublicKey(), (PrivateKey) store.getKey(alias, password)),
-        certificate);
-  }
-
   public void write(WalletRole role, SigningIdentity identity, CertificateAuthority ca,
       ArtifactLayout layout, char[] password) throws Exception {
     KeyStore store = stores.createSingleKeyStore(role.alias(), identity.keyPair().getPrivate(),
         identity.certificate(), ca.certificate(), password);
     save(store, layout.keystore(role), password);
-    new ArtifactWriter().pem(layout.certificate(role), identity.certificate());
   }
 
   public void writePid(PidIssuerMaterial material, ArtifactLayout layout, char[] password)
@@ -70,24 +45,9 @@ public final class IdentityStores {
     add(store, "nonce-encryption", material.nonceEncryption(), material.authority(), password);
     add(store, "request-encryption", material.requestEncryption(), material.authority(), password);
     save(store, layout.pidKeystore(), password);
-    new ArtifactWriter().pem(layout.certificate(WalletRole.PID_ISSUER),
-        material.signing().certificate());
   }
 
-  public X509Certificate publicCertificate(WalletRole role, CertificateAuthority ca,
-      ArtifactLayout layout) throws Exception {
-    X509Certificate certificate =
-        new CertificateAuthorityManager().readCertificatePem(layout.certificate(role));
-    certificate.checkValidity(Date.from(clock.instant()));
-    certificate.verify(ca.publicKey());
-    if (certificate.getBasicConstraints() >= 0
-        || certificate.getNotAfter().after(ca.certificate().getNotAfter())) {
-      throw new PkiCryptoException("Invalid leaf certificate for " + role.argument());
-    }
-    return certificate;
-  }
-
-  public void verify(WalletRole role, CertificateAuthority ca, ArtifactLayout layout,
+  public X509Certificate verify(WalletRole role, CertificateAuthority ca, ArtifactLayout layout,
       char[] password) throws Exception {
     KeyStore store = stores.loadKeyStore(layout.keystore(role), password);
     Set<String> expected = role == WalletRole.PID_ISSUER
@@ -118,10 +78,7 @@ public final class IdentityStores {
         throw new PkiCryptoException("Private key mismatch for " + alias);
       }
     }
-    if (!store.getCertificate(role.alias()).equals(publicCertificate(role, ca, layout))) {
-      throw new PkiCryptoException(
-          "Keystore differs from persisted certificate for " + role.argument());
-    }
+    return (X509Certificate) store.getCertificate(role.alias());
   }
 
   private void add(KeyStore store, String alias, SigningIdentity identity, CertificateAuthority ca,
@@ -133,7 +90,7 @@ public final class IdentityStores {
   private static void save(KeyStore store, Path path, char[] password) throws Exception {
     try (var bytes = new ByteArrayOutputStream()) {
       store.store(bytes, password);
-      ArtifactStore.write(path, bytes.toByteArray(), true);
+      ArtifactFiles.write(path, bytes.toByteArray(), true);
     }
   }
 }

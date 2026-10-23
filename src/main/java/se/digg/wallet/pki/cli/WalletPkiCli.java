@@ -13,19 +13,19 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
-import se.digg.wallet.pki.application.Operation;
-import se.digg.wallet.pki.application.ProvisioningReport;
-import se.digg.wallet.pki.application.WalletProvisioner;
+import se.digg.wallet.pki.application.WalletPkiGenerator;
 import se.digg.wallet.pki.config.SecretResolver;
-import se.digg.wallet.pki.storage.ArtifactStore;
+import se.digg.wallet.pki.domain.WalletRole;
+import tools.jackson.databind.json.JsonMapper;
 
-/** Wallet-role operations using the explicitly configured authority sources. */
+/** Explicit authority initialization and generation of fixed wallet-role artifacts. */
 @Command(name = "wallet-pki", mixinStandardHelpOptions = true, version = "wallet-pki 0.1.0",
-    description = "Maintain certificates and signed documents for wallet participants.")
+    description = "Generate certificates and signed documents for wallet participants.")
 public final class WalletPkiCli {
   private final CommandLine commandLine;
 
@@ -38,12 +38,11 @@ public final class WalletPkiCli {
   }
 
   public WalletPkiCli(SecretResolver secrets, Clock clock, PrintWriter out, PrintWriter err) {
-    commandLine = new CommandLine(this);
-    for (Operation operation : Operation.values()) {
-      commandLine.addSubcommand(operation.name().toLowerCase(java.util.Locale.ROOT),
-          new RoleCommand(operation, new WalletProvisioner(secrets, clock)));
-    }
-    commandLine.addSubcommand("help", new CommandLine.HelpCommand());
+    var generator = new WalletPkiGenerator(secrets, clock);
+    commandLine = new CommandLine(this)
+        .addSubcommand("init-authorities", new InitializeCommand(generator))
+        .addSubcommand("generate", new GenerateCommand(generator))
+        .addSubcommand("help", new CommandLine.HelpCommand());
     if (out != null) {
       commandLine.setOut(out);
     }
@@ -60,42 +59,76 @@ public final class WalletPkiCli {
     return commandLine.execute(args);
   }
 
-  @Command(mixinStandardHelpOptions = true,
-      description = "Ensure, renew, rotate or verify the selected wallet roles.")
-  private static final class RoleCommand implements Callable<Integer> {
-    @Spec
-    private CommandSpec spec;
+  private static final class Inputs {
     @Option(names = {"-c", "--config"}, required = true,
-        description = "Typed wallet environment YAML.")
+        description = "Wallet participant YAML configuration.")
     private Path configuration;
-    @Option(names = "--json",
-        description = "Print the immutable bundle path and role operations as JSON.")
+    @Option(names = "--json", description = "Print a structured result.")
     private boolean json;
     @Parameters(paramLabel = "ROLES",
-        description = "pid-issuer, wallet-provider, verifier-access, "
-            + "verifier-registration, trust-source. "
-            + "Defaults to configured roles for ensure/verify.")
+        description = "Selected wallet roles; defaults to all configured roles.")
     private List<String> roles = new ArrayList<>();
-    private final Operation operation;
-    private final WalletProvisioner provisioner;
+  }
 
-    RoleCommand(Operation operation, WalletProvisioner provisioner) {
-      this.operation = operation;
-      this.provisioner = provisioner;
+  @Command(mixinStandardHelpOptions = true,
+      description = "Create absent managed authorities; preserve and validate existing material.")
+  private static final class InitializeCommand implements Callable<Integer> {
+    @Spec
+    private CommandSpec spec;
+    @Mixin
+    private Inputs inputs = new Inputs();
+    private final WalletPkiGenerator generator;
+
+    InitializeCommand(WalletPkiGenerator generator) {
+      this.generator = generator;
     }
 
     @Override
     public Integer call() {
       try {
-        ProvisioningReport report = provisioner.run(configuration, operation, roles);
-        if (json) {
-          spec.commandLine().getOut().println(ArtifactStore.JSON.writeValueAsString(Map.of(
-              "environment", report.environment(), "generation", report.generation(),
-              "bundle", report.bundle().toString(), "roles", report.roles())));
+        var roles = generator.initializeAuthorities(inputs.configuration, inputs.roles).stream()
+            .sorted().map(WalletRole::argument).toList();
+        if (inputs.json) {
+          spec.commandLine().getOut().println(
+              JsonMapper.builder().build().writeValueAsString(Map.of("authorities", roles)));
         } else {
-          report.roles().forEach((role, action) -> spec.commandLine().getOut()
-              .println(action + " " + role.argument()));
-          spec.commandLine().getOut().println("Bundle: " + report.bundle());
+          roles.forEach(role -> spec.commandLine().getOut().println("Authority ready: " + role));
+        }
+        return 0;
+      } catch (Exception e) {
+        spec.commandLine().getErr().println("Error: " + e.getMessage());
+        return 1;
+      }
+    }
+  }
+
+  @Command(mixinStandardHelpOptions = true,
+      description = "Generate fresh participant keys and validated artifacts into a new directory.")
+  private static final class GenerateCommand implements Callable<Integer> {
+    @Spec
+    private CommandSpec spec;
+    @Mixin
+    private Inputs inputs = new Inputs();
+    @Option(names = {"-o", "--output"},
+        description = "Fresh output directory; overrides outputDirectory from YAML.")
+    private Path output;
+    private final WalletPkiGenerator generator;
+
+    GenerateCommand(WalletPkiGenerator generator) {
+      this.generator = generator;
+    }
+
+    @Override
+    public Integer call() {
+      try {
+        var result = generator.generate(inputs.configuration, inputs.roles, output);
+        var roles = result.roles().stream().sorted().map(WalletRole::argument).toList();
+        if (inputs.json) {
+          spec.commandLine().getOut().println(JsonMapper.builder().build().writeValueAsString(
+              Map.of("directory", result.directory().toString(), "roles", roles)));
+        } else {
+          roles.forEach(role -> spec.commandLine().getOut().println("Generated: " + role));
+          spec.commandLine().getOut().println("Output: " + result.directory());
         }
         return 0;
       } catch (Exception e) {
