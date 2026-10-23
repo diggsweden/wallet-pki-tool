@@ -51,3 +51,6 @@ pnpm-debug.log*
 node_modules
 **/megalinter-reports
 src/test/resources/test-signed.xml
+
+# Private PKI authority state
+.wallet-pki/

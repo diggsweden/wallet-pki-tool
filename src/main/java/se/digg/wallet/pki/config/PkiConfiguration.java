@@ -4,27 +4,31 @@
 
 package se.digg.wallet.pki.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import java.util.List;
+import java.nio.file.Path;
+import se.digg.wallet.pki.domain.Checks;
+import se.digg.wallet.pki.domain.Organization;
 
-/** Configuration model representing the root PKI YAML configuration. */
-@JsonIgnoreProperties(ignoreUnknown = true)
-public record PkiConfiguration(
-    String environment,
-    String outputDir,
-    List<AuthorityConfig> authorities,
-    List<CertificateConfig> certificates,
-    List<TrustListConfig> trustLists) {
-
-  /**
-   * Compact constructor enforcing outputDir invariant and providing default empty lists.
-   */
+/** Complete configuration for the five wallet ecosystem roles. */
+public record PkiConfiguration(int schemaVersion, String stateDirectory, String outputDirectory,
+    Organization organization, PidIssuerConfig pidIssuer, WalletProviderConfig walletProvider,
+    VerifierConfig verifier, TrustSourceConfig trustSource) {
   public PkiConfiguration {
-    if (outputDir == null || outputDir.isBlank()) {
-      throw new IllegalArgumentException("Field 'outputDir' is required in configuration");
-    }
-    authorities = authorities != null ? List.copyOf(authorities) : List.of();
-    certificates = certificates != null ? List.copyOf(certificates) : List.of();
-    trustLists = trustLists != null ? List.copyOf(trustLists) : List.of();
+    if (schemaVersion != 1)
+      throw new IllegalArgumentException(
+          "schemaVersion must be 1; generic authorities/certificates configuration is no longer supported");
+    Checks.text(stateDirectory, "stateDirectory");
+    Checks.text(outputDirectory, "outputDirectory");
+    Checks.required(organization, "organization");
+    Checks.required(pidIssuer, "pidIssuer");
+    Checks.required(walletProvider, "walletProvider");
+    Checks.required(verifier, "verifier");
+    Checks.required(trustSource, "trustSource");
+    Path state = Path.of(stateDirectory).toAbsolutePath().normalize();
+    Path publication =
+        Path.of(outputDirectory).resolve(trustSource.publicationDirectory()).toAbsolutePath()
+            .normalize();
+    if (state.startsWith(publication) || publication.startsWith(state))
+      throw new IllegalArgumentException(
+          "Private state and public trust-source directories must not overlap");
   }
 }
