@@ -25,6 +25,7 @@ public record LoteDocument(
    * Inner content of the LoTE document.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record LoteContent(
       @JsonProperty("ListAndSchemeInformation") ListAndSchemeInformation listAndSchemeInformation,
       @JsonProperty("TrustedEntitiesList") List<TrustedEntity> trustedEntitiesList) {
@@ -39,6 +40,7 @@ public record LoteDocument(
    * Scheme and version information for the LoTE.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record ListAndSchemeInformation(
       @JsonProperty("LoTEVersionIdentifier") int loteVersionIdentifier,
       @JsonProperty("LoTESequenceNumber") int loteSequenceNumber,
@@ -59,6 +61,7 @@ public record LoteDocument(
    * Language-tagged string value.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record LangValue(
       @JsonProperty("lang") String lang,
       @JsonProperty("value") String value) {
@@ -68,6 +71,7 @@ public record LoteDocument(
    * Representation of a trusted entity in the LoTE.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record TrustedEntity(
       @JsonProperty("TrustedEntityInformation") TrustedEntityInformation trustedEntityInformation,
       @JsonProperty("TrustedEntityServices") List<TrustedEntityService> trustedEntityServices) {
@@ -82,6 +86,7 @@ public record LoteDocument(
    * Information about a trusted entity.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record TrustedEntityInformation(
       @JsonProperty("TEName") List<LangValue> teName,
       @JsonProperty("TEAddress") TeAddress teAddress,
@@ -97,6 +102,7 @@ public record LoteDocument(
    * Address information for a trusted entity.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record TeAddress(
       @JsonProperty("TEPostalAddress") List<PostalAddress> tePostalAddress,
       @JsonProperty("TEElectronicAddress") List<UriValue> teElectronicAddress) {
@@ -112,6 +118,7 @@ public record LoteDocument(
    * Postal address entry.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record PostalAddress(
       @JsonProperty("lang") String lang,
       @JsonProperty("StreetAddress") String streetAddress,
@@ -122,6 +129,7 @@ public record LoteDocument(
    * Language-tagged URI value.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record UriValue(
       @JsonProperty("lang") String lang,
       @JsonProperty("uriValue") String uriValue) {
@@ -131,6 +139,7 @@ public record LoteDocument(
    * Service provided by a trusted entity.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record TrustedEntityService(
       @JsonProperty("ServiceInformation") ServiceInformation serviceInformation) {
   }
@@ -139,6 +148,7 @@ public record LoteDocument(
    * Service information and digital identity details.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record ServiceInformation(
       @JsonProperty("ServiceName") List<LangValue> serviceName,
       @JsonProperty("ServiceDigitalIdentity") ServiceDigitalIdentity serviceDigitalIdentity,
@@ -155,6 +165,7 @@ public record LoteDocument(
    * Digital identity holding X.509 certificate entries.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record ServiceDigitalIdentity(
       @JsonProperty("X509Certificates") List<X509CertificateVal> x509Certificates) {
 
@@ -167,6 +178,7 @@ public record LoteDocument(
    * Certificate wrapper containing Base64 encoded DER certificate value.
    */
   @JsonIgnoreProperties(ignoreUnknown = true)
+
   public record X509CertificateVal(
       @JsonProperty("val") String val) {
   }

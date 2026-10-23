@@ -6,6 +6,8 @@
 **/*.yml
 **/*.yaml
 .rumdl-cache
+.rumdl_cache
+.wallet-pki
 megalinter-reports
 target
 development/format/eclipse-java-google-style.xml

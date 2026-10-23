@@ -82,6 +82,7 @@ public class StatusListGenerator {
   /**
    * Model representing the Status List JWT payload claims.
    */
+
   public record StatusListPayload(
       @JsonProperty("iss") String iss,
       @JsonProperty("sub") String sub,
@@ -93,6 +94,7 @@ public class StatusListGenerator {
   /**
    * Model representing the status_list claim content.
    */
+
   public record StatusListContent(
       @JsonProperty("bits") int bits,
       @JsonProperty("lst") String lst) {

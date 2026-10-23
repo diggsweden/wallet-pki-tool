@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 Digg - Agency for Digital Government
+#
+# SPDX-License-Identifier: CC0-1.0
+
+outputDirectory: ../generated/wallet-provider
+publicationBaseUrl: https://trust.example.test
+
+organization:
+  name: DIGG
+  country: SE
+  identifier: VATSE-12345678
+
+walletProvider:
+  authority:
+    source: existing
+    certificateFile: /run/secrets/wallet-pki/wallet-provider/ca.pem
+    privateKeyFile: /run/secrets/wallet-pki/wallet-provider/ca_private_key.pem
+    crlFile: /run/secrets/wallet-pki/wallet-provider/revocation-list.pem
+  signing:
+    commonName: Wallet Provider (Test)
+    subjectAlternativeNames:
+      dns: [wallet-provider.example.test]
+  keystorePassword:
+    file: /run/secrets/wallet-pki/wallet-provider/keystore-password

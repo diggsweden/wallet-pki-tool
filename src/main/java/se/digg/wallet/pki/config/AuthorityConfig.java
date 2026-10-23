@@ -4,41 +4,34 @@
 
 package se.digg.wallet.pki.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import se.digg.wallet.pki.domain.Checks;
 
-/** Configuration model for a Certificate Authority (CA). */
-@JsonIgnoreProperties(ignoreUnknown = true)
-public record AuthorityConfig(
-    String id,
-    String commonName,
-    String keyType,
-    String keyFile,
-    String certFile) {
-
-  /**
-   * Compact constructor enforcing model invariants and providing default keyType.
-   */
-  public AuthorityConfig {
-    if (id == null || id.isBlank()) {
-      throw new IllegalArgumentException("Authority 'id' is required and cannot be blank");
-    }
-    if (commonName == null || commonName.isBlank()) {
-      throw new IllegalArgumentException(
-          "Authority 'commonName' is required for authority: %s".formatted(id));
-    }
-    if (keyType == null || keyType.isBlank()) {
-      keyType = "EC_P256";
-    }
-    if ((keyFile != null && certFile == null) || (keyFile == null && certFile != null)) {
-      throw new IllegalArgumentException(
-          "Both 'keyFile' and 'certFile' must be provided when configuring external CA for"
-              + " authority: %s"
-                  .formatted(id));
-    }
+/** A managed authority or an explicitly supplied certificate/private-key pair. */
+public record AuthorityConfig(Source source, String commonName, String certificateFile,
+    String privateKeyFile, String crlFile) {
+  public enum Source {
+    @JsonProperty("managed")
+    MANAGED,
+    @JsonProperty("existing")
+    EXISTING
   }
 
-  /** Convenience constructor for basic CA configuration. */
-  public AuthorityConfig(String id, String commonName) {
-    this(id, commonName, "EC_P256", null, null);
+  public AuthorityConfig {
+    Checks.required(source, "authority.source");
+    if (source == Source.MANAGED) {
+      Checks.text(commonName, "authority.commonName");
+      if (certificateFile != null || privateKeyFile != null || crlFile != null) {
+        throw new IllegalArgumentException(
+            "Managed authorities cannot specify certificateFile or privateKeyFile");
+      }
+    } else {
+      Checks.text(certificateFile, "authority.certificateFile");
+      Checks.text(privateKeyFile, "authority.privateKeyFile");
+      Checks.text(crlFile, "authority.crlFile");
+      if (commonName != null) {
+        throw new IllegalArgumentException("Existing authority names come from their certificates");
+      }
+    }
   }
 }

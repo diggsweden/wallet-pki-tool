@@ -15,8 +15,8 @@ SPDX-License-Identifier: CC0-1.0
   <version>0.1.0-SNAPSHOT</version>
   <name>wallet-pki-tool</name>
   <description>
-    A command line interface for automating PKI, certificate and LoTE generation
-    in the Digg wallet-ecosystem
+    A command line interface for maintaining wallet participant certificates
+    and signed trust documents
   </description>
 
   <properties>
@@ -75,8 +75,9 @@ SPDX-License-Identifier: CC0-1.0
       <artifactId>jackson-databind</artifactId>
     </dependency>
     <dependency>
-      <groupId>tools.jackson.dataformat</groupId>
-      <artifactId>jackson-dataformat-yaml</artifactId>
+      <groupId>org.yaml</groupId>
+      <artifactId>snakeyaml</artifactId>
+      <version>2.6</version>
     </dependency>
 
     <!-- Cryptography & PKI -->
