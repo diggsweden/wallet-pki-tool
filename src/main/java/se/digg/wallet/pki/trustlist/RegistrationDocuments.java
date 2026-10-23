@@ -156,7 +156,7 @@ public final class RegistrationDocuments {
   }
 
   public static Instant expiresAt(Path path) throws Exception {
-    var payload = tools.jackson.databind.json.JsonMapper.builder().build()
+    var payload = JsonMapper.builder().build()
         .readTree(JWSObject.parse(Files.readString(path)).getPayload().toString());
     return Instant.ofEpochSecond(payload.path("exp").asLong());
   }
