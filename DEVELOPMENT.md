@@ -15,7 +15,7 @@
 
 ## Application operations
 
-`WalletPkiCli` maps role-first command paths to the named operations in `RoleProvisioner`. The existing participant flows own their certificate recipes, aliases and output files. `EcosystemProvisioner` remains the explicit bulk operation and preflights all five roles before invoking the flows. `AuthorityProvisioner` initializes only the selected roots without resolving keystore passwords.
+`WalletPkiCli` maps role-first command paths to the named operations in `RoleProvisioner`. The existing participant flows own their certificate recipes, aliases and output files. `WalletServicesPkiGenerator` generates PKI material for the PID issuer, wallet provider, verifier and trust source, preflighting all five roles before invoking the flows. `AuthorityProvisioner` initializes only the selected roots without resolving keystore passwords.
 
 Shared publication settings live in `PublicationConfig`. Role sections may be omitted; each application operation checks its own required sections before resolving secrets or changing outputs. Existing full configurations with publication settings under `trustSource` remain supported.
 

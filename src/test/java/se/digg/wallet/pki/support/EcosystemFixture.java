@@ -11,11 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import se.digg.wallet.pki.application.AuthorityProvisioner;
-import se.digg.wallet.pki.domain.AuthorityRole;
-import se.digg.wallet.pki.application.EcosystemProvisioner;
+import se.digg.wallet.pki.application.WalletServicesPkiGenerator;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
+import se.digg.wallet.pki.domain.AuthorityRole;
 
 /** Real configuration and crypto fixture, isolated under a JUnit temporary directory. */
 public final class EcosystemFixture {
@@ -41,8 +41,8 @@ public final class EcosystemFixture {
     new AuthorityProvisioner().initialize(config, EnumSet.allOf(AuthorityRole.class), quiet());
   }
 
-  public static EcosystemProvisioner provisioner() {
-    return new EcosystemProvisioner(new SecretResolver(key -> "test-password"));
+  public static WalletServicesPkiGenerator provisioner() {
+    return new WalletServicesPkiGenerator(new SecretResolver(key -> "test-password"));
   }
 
   public static PrintWriter quiet() {

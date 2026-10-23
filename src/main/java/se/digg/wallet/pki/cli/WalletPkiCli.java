@@ -14,8 +14,8 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ScopeType;
-import se.digg.wallet.pki.application.EcosystemProvisioner;
 import se.digg.wallet.pki.application.RoleProvisioner;
+import se.digg.wallet.pki.application.WalletServicesPkiGenerator;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
@@ -80,7 +80,7 @@ public class WalletPkiCli {
         "Generate all five roles with new keys and rebuild their documents. "
             + "Requires complete role configuration, five initialized authorities and passwords; "
             + "preflight prerequisites before replacing outputs.",
-        new EcosystemProvisioner(secrets)::generate));
+        new WalletServicesPkiGenerator(secrets)::generate));
     commandLine.registerConverter(AuthorityRole.class,
         value -> Arrays.stream(AuthorityRole.values())
             .filter(role -> role.name().toLowerCase(Locale.ROOT).replace('_', '-').equals(value))

@@ -10,11 +10,11 @@ import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
 import se.digg.wallet.pki.domain.AuthorityRole;
 
-/** Explicit bulk operation; all role configuration, secrets and authorities are preflighted. */
-public final class EcosystemProvisioner {
+/** Generates PKI material for the PID issuer, wallet provider, verifier and trust source. */
+public final class WalletServicesPkiGenerator {
   private final RoleProvisioner roles;
 
-  public EcosystemProvisioner(SecretResolver secrets) {
+  public WalletServicesPkiGenerator(SecretResolver secrets) {
     roles = new RoleProvisioner(secrets);
   }
 

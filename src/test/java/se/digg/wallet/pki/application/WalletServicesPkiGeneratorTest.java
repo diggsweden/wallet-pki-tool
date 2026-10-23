@@ -25,7 +25,7 @@ import se.digg.wallet.pki.support.EcosystemFixture;
 import se.digg.wallet.pki.trustlist.TrustListSigner;
 import tools.jackson.databind.json.JsonMapper;
 
-class EcosystemProvisionerTest {
+class WalletServicesPkiGeneratorTest {
   @TempDir
   Path directory;
 
@@ -213,7 +213,7 @@ class EcosystemProvisionerTest {
     var outputDirectory = Path.of(config.outputDirectory());
     EcosystemFixture.initializeAuthorities(config);
     var before = snapshot(outputDirectory);
-    var provisioner = new EcosystemProvisioner(new SecretResolver(
+    var provisioner = new WalletServicesPkiGenerator(new SecretResolver(
         name -> name.equals("TRUST_SOURCE_KEYSTORE_PASSWORD") ? null : "test-password"));
     assertThatThrownBy(() -> provisioner.generate(config, EcosystemFixture.quiet()))
         .hasMessageContaining("not set or empty");
