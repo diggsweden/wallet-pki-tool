@@ -148,9 +148,9 @@ class WalletServicesPkiGeneratorTest {
             directory.resolve("config/certificates/wallet-provider/wallet_provider.p12"));
     byte[] loteBefore =
         Files.readAllBytes(directory.resolve("config/trust-source/signed/trusted-entities.json"));
-    var selected = new RoleProvisioner(new SecretResolver(
+    var selected = new PidIssuerFlow(new SecretResolver(
         name -> name.equals("PID_ISSUER_KEYSTORE_PASSWORD") ? "test-password" : null));
-    selected.generatePidIssuer(config, EcosystemFixture.quiet());
+    selected.generate(config, EcosystemFixture.quiet());
     assertThat(Files.readAllBytes(directory.resolve("config/certificates/issuer/pid_issuer.p12")))
         .isNotEqualTo(pidBefore);
     assertThat(Files
@@ -175,7 +175,7 @@ class WalletServicesPkiGeneratorTest {
     for (var role : AuthorityRole.values())
       Files.delete(directory.resolve("state/authorities").resolve(role.directory())
           .resolve("ca_private_key.pem"));
-    var selected = new RoleProvisioner(new SecretResolver(
+    var selected = new TrustSourceFlow(new SecretResolver(
         name -> name.equals("TRUST_SOURCE_KEYSTORE_PASSWORD") ? "test-password" : null));
     selected.generateLote(config, EcosystemFixture.quiet());
     var after = snapshot(outputDirectory);
@@ -193,9 +193,9 @@ class WalletServicesPkiGeneratorTest {
     var previousKey =
         load(directory.resolve("config/certificates/trust-list-signer/trust_source.p12"))
             .getCertificate("trust_source").getPublicKey();
-    var selected = new RoleProvisioner(new SecretResolver(
+    var selected = new TrustSourceFlow(new SecretResolver(
         name -> name.equals("TRUST_SOURCE_KEYSTORE_PASSWORD") ? "test-password" : null));
-    selected.generateTrustSource(config, EcosystemFixture.quiet());
+    selected.generate(config, EcosystemFixture.quiet());
     var currentKey =
         load(directory.resolve("config/certificates/trust-list-signer/trust_source.p12"))
             .getCertificate("trust_source").getPublicKey();
@@ -225,9 +225,8 @@ class WalletServicesPkiGeneratorTest {
     var config = EcosystemFixture.configuration(directory);
     var outputDirectory = Path.of(config.outputDirectory());
     var stateDirectory = Path.of(config.stateDirectory());
-    assertThatThrownBy(() -> new RoleProvisioner(new SecretResolver(name -> "test-password"))
-        .generatePidIssuer(config,
-            EcosystemFixture.quiet()))
+    assertThatThrownBy(() -> new PidIssuerFlow(new SecretResolver(name -> "test-password"))
+        .generate(config, EcosystemFixture.quiet()))
         .hasMessageContaining("authorities init");
     assertThat(Files.exists(stateDirectory)).isFalse();
     assertThat(Files.exists(outputDirectory)).isFalse();
@@ -238,7 +237,7 @@ class WalletServicesPkiGeneratorTest {
     var config = EcosystemFixture.configuration(directory);
     EcosystemFixture.initializeAuthorities(config);
     assertThatThrownBy(
-        () -> new RoleProvisioner(new SecretResolver(name -> "test-password")).generateLote(config,
+        () -> new TrustSourceFlow(new SecretResolver(name -> "test-password")).generateLote(config,
             EcosystemFixture.quiet()))
         .hasMessageContaining("KeyStore file not found");
     assertThat(Files.exists(
@@ -276,7 +275,7 @@ class WalletServicesPkiGeneratorTest {
     var provisioner = EcosystemFixture.provisioner();
     EcosystemFixture.initializeAuthorities(config);
     provisioner.generate(config, EcosystemFixture.quiet());
-    var documents = new RoleProvisioner(new SecretResolver(name -> "test-password"));
+    var documents = new TrustSourceFlow(new SecretResolver(name -> "test-password"));
     documents.generateLote(config, EcosystemFixture.quiet());
     documents.generateStatusList(config, EcosystemFixture.quiet());
     for (String artifact : artifacts) {

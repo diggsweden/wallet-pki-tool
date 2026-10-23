@@ -14,7 +14,10 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ScopeType;
-import se.digg.wallet.pki.application.RoleProvisioner;
+import se.digg.wallet.pki.application.PidIssuerFlow;
+import se.digg.wallet.pki.application.TrustSourceFlow;
+import se.digg.wallet.pki.application.VerifierFlow;
+import se.digg.wallet.pki.application.WalletProviderFlow;
 import se.digg.wallet.pki.application.WalletServicesPkiGenerator;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.PkiConfiguration;
@@ -41,7 +44,10 @@ public class WalletPkiCli {
 
   public WalletPkiCli(ConfigurationLoader loader, SecretResolver secrets, PrintWriter out,
       PrintWriter err) {
-    var roles = new RoleProvisioner(secrets);
+    var pidIssuer = new PidIssuerFlow(secrets);
+    var walletProvider = new WalletProviderFlow(secrets);
+    var verifier = new VerifierFlow(secrets);
+    var trustSource = new TrustSourceFlow(secrets);
     commandLine = new CommandLine(this);
     commandLine.addSubcommand("authorities",
         group("authorities", "Manage local wallet authorities.")
@@ -49,32 +55,32 @@ public class WalletPkiCli {
     commandLine.addSubcommand("pid-issuer", participant("pid-issuer", loader,
         "Create three new keys, replace the PID keystore and rebuild issuer registration JWT/JSON. "
             + "Requires the PID authority and password.",
-        roles::generatePidIssuer));
+        pidIssuer::generate));
     commandLine.addSubcommand("wallet-provider", participant("wallet-provider", loader,
         "Create a new attestation key and replace the wallet-provider keystore. "
             + "Requires the wallet-provider authority and password.",
-        roles::generateWalletProvider));
+        walletProvider::generate));
     commandLine.addSubcommand("verifier", group("verifier", "Generate verifier identities.")
         .addSubcommand("access", participant("access", loader,
             "Create a new access key and replace the verifier access keystore. "
                 + "Requires the access authority and password.",
-            roles::generateVerifierAccess))
+            verifier::generateAccess))
         .addSubcommand("registration", participant("registration", loader,
             "Create a new registration key and replace the keystore, JWT and environment export. "
                 + "Requires the registration authority and password.",
-            roles::generateVerifierRegistration)));
+            verifier::generateRegistration)));
     var trust = participant("trust-source", loader,
         "Create a new trust signer, replace its keystore/certificate and rebuild LoTE/status list. "
             + "Requires the trust-source authority/password and four public participant CAs.",
-        roles::generateTrustSource);
+        trustSource::generate);
     trust.addSubcommand("lote", participant("lote", loader,
         "Replace only LoTE using the existing signer. Requires its password and five public CAs; "
             + "no CA private keys or participant passwords are read.",
-        roles::generateLote));
+        trustSource::generateLote));
     trust.addSubcommand("status-list", participant("status-list", loader,
         "Replace only the all-valid test status list using the existing signer. Requires its "
             + "password and public trust-source CA; no participant authorities are read.",
-        roles::generateStatusList));
+        trustSource::generateStatusList));
     commandLine.addSubcommand("trust-source", trust);
     commandLine.addSubcommand("ecosystem", participant("ecosystem", loader,
         "Generate all five roles with new keys and rebuild their documents. "

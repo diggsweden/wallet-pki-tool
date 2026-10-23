@@ -5,27 +5,42 @@
 package se.digg.wallet.pki.application;
 
 import java.io.PrintWriter;
-import java.util.EnumSet;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
-import se.digg.wallet.pki.domain.AuthorityRole;
 
 /** Generates PKI material for the PID issuer, wallet provider, verifier and trust source. */
 public final class WalletServicesPkiGenerator {
-  private final RoleProvisioner roles;
+  private final PidIssuerFlow pidIssuer;
+  private final WalletProviderFlow walletProvider;
+  private final VerifierFlow verifier;
+  private final TrustSourceFlow trustSource;
 
   public WalletServicesPkiGenerator(SecretResolver secrets) {
-    roles = new RoleProvisioner(secrets);
+    pidIssuer = new PidIssuerFlow(secrets);
+    walletProvider = new WalletProviderFlow(secrets);
+    verifier = new VerifierFlow(secrets);
+    trustSource = new TrustSourceFlow(secrets);
   }
 
   public void generate(PkiConfiguration config, PrintWriter out) {
-    try (var inputs = roles.prepare(config, EnumSet.allOf(AuthorityRole.class))) {
-      roles.generatePidIssuer(config, inputs, out);
-      roles.generateWalletProvider(config, inputs, out);
-      roles.generateVerifierAccess(config, inputs, out);
-      roles.generateVerifierRegistration(config, inputs, out);
-      roles.generateTrustSource(config, inputs, out);
-      roles.publish(config, inputs);
+    PidIssuerFlow.requireConfiguration(config);
+    WalletProviderFlow.requireConfiguration(config);
+    VerifierFlow.requireAccessConfiguration(config);
+    VerifierFlow.requireRegistrationConfiguration(config);
+    TrustSourceFlow.requireConfiguration(config);
+
+    try (var pidIssuerInputs = pidIssuer.loadInputs(config);
+        var walletProviderInputs = walletProvider.loadInputs(config);
+        var verifierAccessInputs = verifier.loadAccessInputs(config);
+        var verifierRegistrationInputs = verifier.loadRegistrationInputs(config);
+        var trustSourceInputs = trustSource.loadInputs(config)) {
+      var trustedAuthorities = trustSource.loadTrustedAuthorities(config);
+
+      pidIssuer.generate(config, pidIssuerInputs, out);
+      walletProvider.generate(config, walletProviderInputs, out);
+      verifier.generateAccess(config, verifierAccessInputs, out);
+      verifier.generateRegistration(config, verifierRegistrationInputs, out);
+      trustSource.generate(config, trustSourceInputs, trustedAuthorities, out);
     }
   }
 }
