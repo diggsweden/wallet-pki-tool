@@ -10,7 +10,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Objects;
 import se.digg.wallet.pki.config.LoteConfig;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
@@ -48,51 +48,93 @@ public class LoteGenerator {
     this.trustListSigner = Objects.requireNonNull(trustListSigner);
   }
 
-  public LoteDocument buildLoteDocument(WalletTrustAnchors anchors, LoteConfig config,
+  public String buildLoteDocument(WalletTrustAnchors anchors, LoteConfig config,
       Organization organization) {
     Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
-    var scheme = new LoteDocument.ListAndSchemeInformation(1, config.sequenceNumber(),
-        LOTE_TYPE_WALLET_PROVIDERS,
-        List.of(new LoteDocument.LangValue("en", organization.name())),
-        List.of(new LoteDocument.LangValue("en", config.name())), organization.country(),
-        now.toString(), now.plus(Duration.ofDays(config.validityDays())).toString());
-    var entities = config.trustedAuthorities();
-    return new LoteDocument(new LoteDocument.LoteContent(scheme, List.of(
-        entity(anchors.walletProvider(), entities.walletProvider(), SVC_TYPE_WALLET_ISSUANCE,
+    var authorities = config.trustedAuthorities();
+    var entities = "[%s]".formatted(String.join(",\n",
+        entity(anchors.walletProvider(), authorities.walletProvider(), SVC_TYPE_WALLET_ISSUANCE,
             organization, now),
-        entity(anchors.pidIssuer(), entities.pidIssuer(), SVC_TYPE_PID_ISSUANCE, organization, now),
-        entity(anchors.verifierAccess(), entities.verifierAccess(), SVC_TYPE_WRPAC_ISSUANCE,
+        entity(anchors.pidIssuer(), authorities.pidIssuer(), SVC_TYPE_PID_ISSUANCE,
             organization, now),
-        entity(anchors.verifierRegistration(), entities.verifierRegistration(),
-            SVC_TYPE_WRPRC_ISSUANCE, organization, now))));
+        entity(anchors.verifierAccess(), authorities.verifierAccess(), SVC_TYPE_WRPAC_ISSUANCE,
+            organization, now),
+        entity(anchors.verifierRegistration(), authorities.verifierRegistration(),
+            SVC_TYPE_WRPRC_ISSUANCE, organization, now)));
+    var values = new LinkedHashMap<String, Object>();
+    values.put("sequenceNumber", config.sequenceNumber());
+    values.put("loteType", LOTE_TYPE_WALLET_PROVIDERS);
+    values.put("operatorName", organization.name());
+    values.put("schemeName", config.name());
+    values.put("territory", organization.country());
+    values.put("issuedAt", now.toString());
+    values.put("nextUpdate", now.plus(Duration.ofDays(config.validityDays())).toString());
+
+    return JsonTemplate.render(objectMapper, """
+        {
+          "LoTE": {
+            "ListAndSchemeInformation": {
+              "LoTEVersionIdentifier": 1,
+              "LoTESequenceNumber": ${sequenceNumber},
+              "LoTEType": ${loteType},
+              "SchemeOperatorName": [{ "lang": "en", "value": ${operatorName} }],
+              "SchemeName": [{ "lang": "en", "value": ${schemeName} }],
+              "SchemeTerritory": ${territory},
+              "ListIssueDateTime": ${issuedAt},
+              "NextUpdate": ${nextUpdate}
+            },
+            "TrustedEntitiesList": ${entities}
+          }
+        }
+        """, values).replace("${entities}", entities);
   }
 
-  public String serializeLoteJson(LoteDocument document) {
-    return objectMapper.writeValueAsString(document);
-  }
-
-  public String sign(LoteDocument document, SigningIdentity signer) {
-    return trustListSigner.signJws(serializeLoteJson(document), signer.keyPair().getPrivate(),
+  public String sign(String document, SigningIdentity signer) {
+    return trustListSigner.signJws(document, signer.keyPair().getPrivate(),
         signer.certificate());
   }
 
-  private LoteDocument.TrustedEntity entity(X509Certificate certificate, LoteConfig.Entity config,
+  private String entity(X509Certificate certificate, LoteConfig.Entity config,
       String serviceType, Organization organization, Instant issuedAt) {
     try {
-      var uris = List.of(new LoteDocument.UriValue("en", config.informationUrl()));
-      var address = new LoteDocument.TeAddress(List.of(
-          new LoteDocument.PostalAddress("en", config.streetAddress(), organization.country())),
-          uris);
-      var information = new LoteDocument.TrustedEntityInformation(
-          List.of(new LoteDocument.LangValue("en", config.entityName())), address, uris);
-      var identity = new LoteDocument.ServiceDigitalIdentity(List.of(
-          new LoteDocument.X509CertificateVal(
-              Base64.getEncoder().encodeToString(certificate.getEncoded()))));
-      var service = new LoteDocument.ServiceInformation(
-          List.of(new LoteDocument.LangValue("en", config.serviceName())),
-          identity, serviceType, SVC_STATUS_GRANTED, issuedAt.toString());
-      return new LoteDocument.TrustedEntity(information,
-          List.of(new LoteDocument.TrustedEntityService(service)));
+      var values = new LinkedHashMap<String, Object>();
+      values.put("entityName", config.entityName());
+      values.put("streetAddress", config.streetAddress());
+      values.put("country", organization.country());
+      values.put("informationUrl", config.informationUrl());
+      values.put("serviceName", config.serviceName());
+      values.put("certificate", Base64.getEncoder().encodeToString(certificate.getEncoded()));
+      values.put("serviceType", serviceType);
+      values.put("serviceStatus", SVC_STATUS_GRANTED);
+      values.put("issuedAt", issuedAt.toString());
+
+      return JsonTemplate.render(objectMapper, """
+          {
+            "TrustedEntityInformation": {
+              "TEName": [{ "lang": "en", "value": ${entityName} }],
+              "TEAddress": {
+                "TEPostalAddress": [
+                  { "lang": "en", "StreetAddress": ${streetAddress}, "Country": ${country} }
+                ],
+                "TEElectronicAddress": [{ "lang": "en", "uriValue": ${informationUrl} }]
+              },
+              "TEInformationURI": [{ "lang": "en", "uriValue": ${informationUrl} }]
+            },
+            "TrustedEntityServices": [
+              {
+                "ServiceInformation": {
+                  "ServiceName": [{ "lang": "en", "value": ${serviceName} }],
+                  "ServiceDigitalIdentity": {
+                    "X509Certificates": [{ "val": ${certificate} }]
+                  },
+                  "ServiceTypeIdentifier": ${serviceType},
+                  "ServiceStatus": ${serviceStatus},
+                  "StatusStartingTime": ${issuedAt}
+                }
+              }
+            ]
+          }
+          """, values);
     } catch (CertificateEncodingException e) {
       throw new PkiCryptoException("Cannot encode LoTE authority", e);
     }

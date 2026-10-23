@@ -8,13 +8,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
+import se.digg.wallet.pki.config.LoteConfig;
+import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.WalletTrustAnchors;
 import se.digg.wallet.pki.support.EcosystemFixture;
+import tools.jackson.databind.json.JsonMapper;
 
 class LoteGeneratorTest {
   @Test
@@ -27,28 +31,62 @@ class LoteGeneratorTest {
     var access = manager.createAuthority("three", "No role information").certificate();
     var registration = manager.createAuthority("four", "Same generic name").certificate();
     var generator = new LoteGenerator();
-    var document =
+    String json =
         generator.buildLoteDocument(new WalletTrustAnchors(pid, wallet, access, registration),
             config.trustSource().lote(), config.organization());
-    var entities = document.lote().trustedEntitiesList();
-    assertThat(entities).hasSize(4);
-    assertThat(entities)
-        .extracting(entity -> entity.trustedEntityServices().getFirst().serviceInformation()
-            .serviceTypeIdentifier())
+    var document = JsonMapper.builder().build().readTree(json);
+    var entities = document.at("/LoTE/TrustedEntitiesList");
+    assertThat(entities.size()).isEqualTo(4);
+    var serviceTypes = new ArrayList<String>();
+    for (int i = 0; i < entities.size(); i++) {
+      serviceTypes.add(entities.get(i)
+          .at("/TrustedEntityServices/0/ServiceInformation/ServiceTypeIdentifier").asString());
+    }
+    assertThat(serviceTypes)
         .containsExactly(LoteGenerator.SVC_TYPE_WALLET_ISSUANCE,
             LoteGenerator.SVC_TYPE_PID_ISSUANCE, LoteGenerator.SVC_TYPE_WRPAC_ISSUANCE,
             LoteGenerator.SVC_TYPE_WRPRC_ISSUANCE);
     var expected = List.of(wallet, pid, access, registration);
     for (int i = 0; i < entities.size(); i++) {
-      var encoded = entities.get(i).trustedEntityServices().getFirst().serviceInformation()
-          .serviceDigitalIdentity().x509Certificates().getFirst().val();
+      var encoded = entities.get(i)
+          .at("/TrustedEntityServices/0/ServiceInformation/ServiceDigitalIdentity/X509Certificates/0/val")
+          .asString();
       assertThat(Base64.getDecoder().decode(encoded)).isEqualTo(expected.get(i).getEncoded());
     }
-    var scheme = document.lote().listAndSchemeInformation();
-    assertThat(scheme.schemeName().getFirst().value()).isEqualTo("Local LoTE");
-    assertThat(Duration.between(Instant.parse(scheme.listIssueDateTime()),
-        Instant.parse(scheme.nextUpdate()))).isEqualTo(Duration.ofDays(365));
-    String json = generator.serializeLoteJson(document);
+    var scheme = document.at("/LoTE/ListAndSchemeInformation");
+    assertThat(scheme.at("/SchemeName/0/value").asString()).isEqualTo("Local LoTE");
+    assertThat(scheme.get("LoTEVersionIdentifier").asInt()).isEqualTo(1);
+    assertThat(scheme.get("LoTEType").asString())
+        .isEqualTo(LoteGenerator.LOTE_TYPE_WALLET_PROVIDERS);
+    assertThat(Duration.between(Instant.parse(scheme.get("ListIssueDateTime").asString()),
+        Instant.parse(scheme.get("NextUpdate").asString()))).isEqualTo(Duration.ofDays(365));
     assertThat(json).contains("\"LoTE\"", "\"TrustedEntitiesList\"", "\"ServiceDigitalIdentity\"");
+  }
+
+  @Test
+  void configured_text_survives_json_escaping() {
+    String text = "A \"quoted\" name\nC:\\wallet";
+    var entity = new LoteConfig.Entity(text, text, "https://example.test", text);
+    var config = new LoteConfig("lote.jwt", text, 7, 30,
+        new LoteConfig.TrustedAuthorities(entity, entity, entity, entity));
+    var organization = new Organization(text, "SE", "VATSE-12345678");
+    var certificate = new CertificateAuthorityManager().createAuthority("test", "Test CA")
+        .certificate();
+    var anchors = new WalletTrustAnchors(certificate, certificate, certificate, certificate);
+    var generator = new LoteGenerator();
+
+    String json = generator.buildLoteDocument(anchors, config, organization);
+    var document = JsonMapper.builder().build().readTree(json);
+
+    var scheme = document.at("/LoTE/ListAndSchemeInformation");
+    assertThat(scheme.at("/SchemeOperatorName/0/value").asString()).isEqualTo(text);
+    assertThat(scheme.at("/SchemeName/0/value").asString()).isEqualTo(text);
+    var information = document.at("/LoTE/TrustedEntitiesList/0/TrustedEntityInformation");
+    assertThat(information.at("/TEName/0/value").asString()).isEqualTo(text);
+    assertThat(information.at("/TEAddress/TEPostalAddress/0/StreetAddress").asString())
+        .isEqualTo(text);
+    assertThat(document.at(
+        "/LoTE/TrustedEntitiesList/0/TrustedEntityServices/0/ServiceInformation/ServiceName/0/value")
+        .asString()).isEqualTo(text);
   }
 }

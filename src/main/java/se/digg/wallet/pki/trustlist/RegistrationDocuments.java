@@ -4,17 +4,15 @@
 
 package se.digg.wallet.pki.trustlist;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.nimbusds.jose.JWSObject;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import se.digg.wallet.pki.config.PidIssuerConfig;
-import se.digg.wallet.pki.config.VerifierRegistrationConfig.LocalizedText;
-import se.digg.wallet.pki.config.VerifierRegistrationConfig.SupervisoryAuthority;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
@@ -24,7 +22,7 @@ import se.digg.wallet.pki.infrastructure.ArtifactWriter;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Typed registration payloads. Only protocol field names and fixed ecosystem routes live here. */
+/** JSON registration documents rendered from explicit placeholders. */
 public final class RegistrationDocuments {
   private final ObjectMapper json = JsonMapper.builder().build();
   private final TrustListSigner signer = new TrustListSigner();
@@ -32,14 +30,24 @@ public final class RegistrationDocuments {
 
   public void writePidIssuer(PidIssuerConfig.Registration config, SigningIdentity identity,
       Path outputDirectory) {
-    var payload = new PidPayload(config.issuer(), config.subject());
-    String token = signer.signJws(json.writeValueAsString(payload), identity.keyPair().getPrivate(),
+    String payload = JsonTemplate.render(json, """
+        {
+          "iss": ${issuer},
+          "sub": ${subject}
+        }
+        """, Map.of("issuer", config.issuer(), "subject", config.subject()));
+    String token = signer.signJws(payload, identity.keyPair().getPrivate(),
         identity.certificate(), "rc-wrp+jwt");
     writer.text(outputDirectory.resolve(config.jwtFile()), token);
     try {
       var header = JWSObject.parse(token).getHeader().toJSONObject();
-      writer.text(outputDirectory.resolve(config.jsonFile()),
-          json.writeValueAsString(new PidDocument(header, payload)));
+      String document = JsonTemplate.render(json, """
+          {
+            "headers": ${headers},
+            "payload": ${payload}
+          }
+          """, Map.of("headers", header, "payload", json.readTree(payload)));
+      writer.text(outputDirectory.resolve(config.jsonFile()), document);
     } catch (java.text.ParseException e) {
       throw new PkiCryptoException("Cannot serialize PID registration header", e);
     }
@@ -50,70 +58,62 @@ public final class RegistrationDocuments {
     long issuedAt = Instant.now().getEpochSecond();
     String base = config.publicBaseUrl().replaceAll("/+$", "");
     var claims = config.requestedPidClaims().stream()
-        .map(path -> new RequestedClaim(Arrays.asList(path.split("\\.")))).toList();
-    var credentials = List
-        .of(new Credential("dc+sd-jwt", new CredentialMetadata(List.of("urn:eudi:pid:1")), claims));
-    var payload = new VerifierPayload(config.name(), organization.identifier(),
-        organization.country(), issuedAt,
-        issuedAt + Duration.ofDays(config.validityDays()).toSeconds(), base + "/registry",
-        config.description(),
-        List.of("https://uri.etsi.org/19475/Entitlement/Service_Provider"), config.purpose(),
-        credentials,
-        config.serviceIdentifier(), config.intendedUseId(), base + "/privacy", base + "/info",
-        base + "/support",
-        config.supervisoryAuthority(), List.of("0.4.0.19475.3.1"), base + "/certificate-policy",
-        new Status(new StatusList(base + "/registration-certificate-status", 0)));
-    String token = signer.signJws(json.writeValueAsString(payload), identity.keyPair().getPrivate(),
+        .map(path -> Map.of("path", Arrays.asList(path.split("\\.")))).toList();
+    var values = new LinkedHashMap<String, Object>();
+    values.put("name", config.name());
+    values.put("subject", organization.identifier());
+    values.put("country", organization.country());
+    values.put("issuedAt", issuedAt);
+    values.put("expiresAt", issuedAt + Duration.ofDays(config.validityDays()).toSeconds());
+    values.put("registryUri", base + "/registry");
+    values.put("description", config.description());
+    values.put("purpose", config.purpose());
+    values.put("claims", claims);
+    values.put("serviceIdentifier", config.serviceIdentifier());
+    values.put("intendedUseId", config.intendedUseId());
+    values.put("privacyPolicy", base + "/privacy");
+    values.put("infoUri", base + "/info");
+    values.put("supportUri", base + "/support");
+    values.put("supervisoryAuthority", config.supervisoryAuthority());
+    values.put("certificatePolicy", base + "/certificate-policy");
+    values.put("statusUri", base + "/registration-certificate-status");
+
+    String payload = JsonTemplate.render(json, """
+        {
+          "name": ${name},
+          "sub": ${subject},
+          "country": ${country},
+          "iat": ${issuedAt},
+          "exp": ${expiresAt},
+          "registry_uri": ${registryUri},
+          "srv_description": ${description},
+          "entitlements": ["https://uri.etsi.org/19475/Entitlement/Service_Provider"],
+          "purpose": ${purpose},
+          "credentials": [
+            {
+              "format": "dc+sd-jwt",
+              "meta": { "vct_values": ["urn:eudi:pid:1"] },
+              "claim": ${claims}
+            }
+          ],
+          "service_identifier": ${serviceIdentifier},
+          "intended_use_id": ${intendedUseId},
+          "privacy_policy": ${privacyPolicy},
+          "info_uri": ${infoUri},
+          "support_uri": ${supportUri},
+          "supervisory_authority": ${supervisoryAuthority},
+          "policy_id": ["0.4.0.19475.3.1"],
+          "certificate_policy": ${certificatePolicy},
+          "status": {
+            "status_list": { "uri": ${statusUri}, "idx": 0 }
+          }
+        }
+        """, values);
+    String token = signer.signJws(payload, identity.keyPair().getPrivate(),
         List.of(identity.certificate(), authority.certificate()), "rc-wrp+jwt");
     writer.text(outputDirectory.resolve(config.jwtFile()), token);
     writer.text(outputDirectory.resolve(config.environmentFile()),
         "VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + token + "\n");
   }
 
-  public record PidPayload(String iss, String sub) {
-  }
-  public record PidDocument(Map<String, Object> headers, PidPayload payload) {
-    public PidDocument {
-      headers = Map.copyOf(headers);
-    }
-  }
-  public record RequestedClaim(List<String> path) {
-    public RequestedClaim {
-      path = List.copyOf(path);
-    }
-  }
-  public record CredentialMetadata(@JsonProperty("vct_values") List<String> vctValues) {
-    public CredentialMetadata {
-      vctValues = List.copyOf(vctValues);
-    }
-  }
-  public record Credential(String format, CredentialMetadata meta, List<RequestedClaim> claim) {
-    public Credential {
-      claim = List.copyOf(claim);
-    }
-  }
-  public record StatusList(String uri, int idx) {
-  }
-  public record Status(@JsonProperty("status_list") StatusList statusList) {
-  }
-  public record VerifierPayload(String name, String sub, String country, long iat, long exp,
-      @JsonProperty("registry_uri") String registryUri,
-      @JsonProperty("srv_description") List<LocalizedText> description,
-      List<String> entitlements, List<LocalizedText> purpose, List<Credential> credentials,
-      @JsonProperty("service_identifier") String serviceIdentifier,
-      @JsonProperty("intended_use_id") String intendedUseId,
-      @JsonProperty("privacy_policy") String privacyPolicy,
-      @JsonProperty("info_uri") String infoUri,
-      @JsonProperty("support_uri") String supportUri,
-      @JsonProperty("supervisory_authority") SupervisoryAuthority supervisoryAuthority,
-      @JsonProperty("policy_id") List<String> policyId,
-      @JsonProperty("certificate_policy") String certificatePolicy, Status status) {
-    public VerifierPayload {
-      description = List.copyOf(description);
-      entitlements = List.copyOf(entitlements);
-      purpose = List.copyOf(purpose);
-      credentials = List.copyOf(credentials);
-      policyId = List.copyOf(policyId);
-    }
-  }
 }
