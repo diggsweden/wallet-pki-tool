@@ -9,78 +9,101 @@ The status list starts with all entries valid; the tool does not manage revocati
 
 ## Getting started
 
-Requires Java 25 and Maven.
-
-Copy [examples/ecosystem.yaml](examples/ecosystem.yaml) and adjust the participant details and output paths. Set the five password environment variables listed in the file, then run:
+Requires Java 25 and Maven. Copy [examples/ecosystem.yaml](examples/ecosystem.yaml), adjust participant details and output paths, and set the five password environment variables named in the file.
 
 ```bash
 mvn package
-java -jar target/wallet-pki-tool.jar init-authorities -c examples/ecosystem.yaml
-java -jar target/wallet-pki-tool.jar generate -c examples/ecosystem.yaml
+java -jar target/wallet-pki-tool.jar authorities init -c examples/ecosystem.yaml
+java -jar target/wallet-pki-tool.jar ecosystem generate -c examples/ecosystem.yaml
 ```
 
-`init-authorities` creates the five local certificate authorities and publishes their certificates and CRLs. Running it again reuses the existing authorities. It does not need the keystore passwords.
+Authority initialization is a separate operation. It creates missing roots, reuses complete existing material, and refuses to replace incomplete roots. It needs no keystore passwords. Participant generation requires initialized authorities and creates new keys on every run, replacing the selected output files.
 
-`generate` creates new participant keys, certificates and signed documents using those authorities. It replaces the selected output files. It fails if the authorities have not been initialized.
+Use `--help` at any level to see the available operations and their prerequisites. `-c`/`--config` can appear before or after the command path. Omitting an operation never generates files.
+
+## Commands and contracts
+
+| Command | Creates or replaces | Required inputs |
+| :--- | :--- | :--- |
+| `authorities init [ROLE...]` | Missing CAs; selected public CA certificates and CRLs | Shared settings; no participant configuration or passwords. Defaults to all five authorities. |
+| `pid-issuer generate` | Three new keys in one keystore; issuer registration JWT/JSON | `pidIssuer`, its authority and password |
+| `wallet-provider generate` | New wallet attestation key and keystore | `walletProvider`, its authority and password |
+| `verifier access generate` | New relying-party access key and keystore | `verifier.access`, its authority and password |
+| `verifier registration generate` | New registration key, keystore, JWT and environment file | `verifier.registration`, its authority and password |
+| `trust-source generate` | New signer key, keystore and public certificate; both LoTE and status list | `trustSource.signer`, `lote`, `statusList`; trust-source authority/password and four public participant CAs |
+| `trust-source lote generate` | Only the LoTE, retaining the signer | `trustSource.signer` and `lote`; existing signer keystore/password and five public CAs |
+| `trust-source status-list generate` | Only the status list, retaining the signer | `trustSource.signer` and `statusList`; existing signer keystore/password and public trust-source CA |
+| `ecosystem generate` | All five participant artifact sets and their documents | Complete role configuration, all five authorities and passwords |
+
+Authority names are `pid-issuer`, `wallet-provider`, `verifier-access`, `verifier-registration`, and `trust-source`.
+
+Each participant command reads only its required secrets and authorities and leaves unrelated artifacts unchanged. Document-only commands need no CA private keys. Replacing the trust signer always rebuilds both documents so they match the new signer. The LoTE contains the four participant CAs, so regenerating participant leaves does not require a new LoTE.
+
+The bulk command checks all configuration, passwords, authorities and trust anchors before writing. Output files are then written directly, as in the individual flows; a filesystem or later generation failure can leave partial updates.
+
+## Generate one participant
+
+[examples/wallet-provider.yaml](examples/wallet-provider.yaml) contains only shared settings and the wallet-provider role:
+
+```bash
+java -jar target/wallet-pki-tool.jar authorities init wallet-provider -c examples/wallet-provider.yaml
+java -jar target/wallet-pki-tool.jar wallet-provider generate -c examples/wallet-provider.yaml
+```
+
+Other roles can be configured independently in the same way. A verifier can have only `access` or only `registration`. A trust-source document command requires only its document settings and signer keystore/password reference; `signer.commonName` and `certificateFile` are needed only when generating a new signer. Supplied sections are validated even if a command does not use them.
+
+To rebuild documents without replacing the signer:
+
+```bash
+java -jar target/wallet-pki-tool.jar trust-source lote generate -c examples/ecosystem.yaml
+java -jar target/wallet-pki-tool.jar trust-source status-list generate -c examples/ecosystem.yaml
+```
+
+The LoTE sequence number remains configurable; increment it in YAML when publishing an updated list.
 
 ## Configuration
 
-The example has settings for the PID issuer, wallet provider, verifier and trust source. All sections are required, even when generating only one participant's files.
+Schema version `1` keeps role output filenames in YAML. Shared `organization`, `stateDirectory`, `outputDirectory`, and `publication` settings are required:
 
-Each role lists its output filenames. These paths are relative to `outputDirectory`; all other paths are relative to the directory where you run the command.
+```yaml
+publication:
+  baseUrl: http://trust-source
+  directory: trust-source
+  rootCrlFile: trust-source/revocation-list.pem
+```
 
-Passwords can come from an environment variable:
+`baseUrl` supplies certificate publication URLs. `directory` and `rootCrlFile` are output paths for public CA material. Artifact paths are relative to `outputDirectory`; other filesystem paths are relative to the directory where you run the command.
+
+Passwords select exactly one environment variable or file:
 
 ```yaml
 keystorePassword:
-  env: PID_ISSUER_KEYSTORE_PASSWORD
+  env: WALLET_PROVIDER_KEYSTORE_PASSWORD
 ```
-
-Or a file:
 
 ```yaml
 keystorePassword:
-  file: /run/secrets/pid-issuer-password
+  file: /run/secrets/wallet-provider-password
 ```
 
-Use one source per password. The tool does not load `.env` files itself.
+The tool does not load `.env` files itself.
 
-## Generate selected files
-
-With no targets, `generate` creates everything. To update selected files:
-
-```bash
-java -jar target/wallet-pki-tool.jar generate -c examples/ecosystem.yaml pid-issuer
-java -jar target/wallet-pki-tool.jar generate -c examples/ecosystem.yaml verifier-access verifier-registration
-java -jar target/wallet-pki-tool.jar generate -c examples/ecosystem.yaml lote status-list
-```
-
-| Target | Generates |
-| :--- | :--- |
-| `pid-issuer` | Signing and encryption keys in one keystore, plus issuer registration JWT and JSON |
-| `wallet-provider` | Wallet attestation signing keystore |
-| `verifier-access` | Relying-party access keystore |
-| `verifier-registration` | Registration signing keystore, JWT and environment file |
-| `trust-source` | Trust-list signing keystore and certificate, LoTE and status list |
-| `lote` | LoTE using the existing trust-list signer |
-| `status-list` | Status list using the existing trust-list signer |
-
-Only the selected targets need passwords. `lote` and `status-list` use the trust-source password and require an existing signer; run `trust-source` first to create one.
+Existing full role configurations with `publicationBaseUrl`, `publicationDirectory`, and `rootCrlFile` inside `trustSource` remain readable. To use a partial configuration, move those three settings to `publication`, using `baseUrl`, `directory`, and `rootCrlFile`. Do not configure both locations. The former `init-authorities` and `generate [TARGETS...]` commands are replaced by the command paths above; existing state and artifact paths are preserved.
 
 ## Output
 
-The example keeps private CA keys in `.wallet-pki/` and writes service files under `config/`:
+The examples keep private CA keys in `.wallet-pki/` and write service files under `config/`:
 
 ```text
 config/
-  certificates/     Participant keystores and verifier registration files
-  pid-issuer/      Issuer registration files
-  trust-source/    Public CA certificates, CRLs and signed trust documents
+  certificates/   Participant keystores and verifier registration files
+  pid-issuer/     Issuer registration files
+  trust-source/   Public CA certificates, CRLs and signed trust documents
 ```
 
 Keep `.wallet-pki/` private and preserve it between runs. Losing it means losing the CA keys.
 
-The LoTE trusts the four participant CAs. Its file is named `trusted-entities.json` for the consuming service, but contains a signed compact JWS. The status list is also signed by the dedicated trust-source certificate.
+The LoTE file is named `trusted-entities.json` for the consuming service, but contains a signed compact JWS. The status list is also signed by the dedicated trust-source certificate.
 
 ## Container
 
@@ -90,10 +113,10 @@ Mount the workspace and pass passwords through an environment file:
 podman run --rm --userns=keep-id \
   -v "$PWD":/workspace:z -w /workspace --env-file .env \
   ghcr.io/diggsweden/wallet-pki-tool:latest \
-  init-authorities -c examples/ecosystem.yaml
+  authorities init -c examples/ecosystem.yaml
 ```
 
-Run the same command with `generate` in place of `init-authorities` to generate the service files.
+Run the same command with `ecosystem generate` in place of `authorities init` to generate all service files, or select an individual command path.
 
 ## Development
 

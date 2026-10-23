@@ -33,8 +33,8 @@ class EcosystemProvisionerTest {
   void full_generation_produces_the_consumer_keystores_and_signed_documents() throws Exception {
     var config = EcosystemFixture.configuration(directory);
     var provisioner = EcosystemFixture.provisioner();
-    provisioner.initializeAuthorities(config, EcosystemFixture.quiet());
-    provisioner.generate(config, List.of(), EcosystemFixture.quiet());
+    EcosystemFixture.initializeAuthorities(config);
+    provisioner.generate(config, EcosystemFixture.quiet());
     for (String relative : List.of("certificates/issuer/pid_issuer.p12",
         "certificates/wallet-provider/wallet_provider.p12",
         "certificates/verifier-access-certificate/verifier-access-certificate.p12",
@@ -137,8 +137,8 @@ class EcosystemProvisionerTest {
       throws Exception {
     var config = EcosystemFixture.configuration(directory);
     var provisioner = EcosystemFixture.provisioner();
-    provisioner.initializeAuthorities(config, EcosystemFixture.quiet());
-    provisioner.generate(config, List.of(), EcosystemFixture.quiet());
+    EcosystemFixture.initializeAuthorities(config);
+    provisioner.generate(config, EcosystemFixture.quiet());
     byte[] root = Files.readAllBytes(directory.resolve("state/authorities")
         .resolve(AuthorityRole.PID_ISSUER.directory()).resolve("ca.pem"));
     byte[] pidBefore =
@@ -148,9 +148,9 @@ class EcosystemProvisionerTest {
             directory.resolve("config/certificates/wallet-provider/wallet_provider.p12"));
     byte[] loteBefore =
         Files.readAllBytes(directory.resolve("config/trust-source/signed/trusted-entities.json"));
-    var selected = new EcosystemProvisioner(new SecretResolver(
+    var selected = new RoleProvisioner(new SecretResolver(
         name -> name.equals("PID_ISSUER_KEYSTORE_PASSWORD") ? "test-password" : null));
-    selected.generate(config, List.of("pid-issuer"), EcosystemFixture.quiet());
+    selected.generatePidIssuer(config, EcosystemFixture.quiet());
     assertThat(Files.readAllBytes(directory.resolve("config/certificates/issuer/pid_issuer.p12")))
         .isNotEqualTo(pidBefore);
     assertThat(Files
@@ -169,15 +169,15 @@ class EcosystemProvisionerTest {
     var config = EcosystemFixture.configuration(directory);
     var outputDirectory = Path.of(config.outputDirectory());
     var provisioner = EcosystemFixture.provisioner();
-    provisioner.initializeAuthorities(config, EcosystemFixture.quiet());
-    provisioner.generate(config, List.of(), EcosystemFixture.quiet());
+    EcosystemFixture.initializeAuthorities(config);
+    provisioner.generate(config, EcosystemFixture.quiet());
     var before = snapshot(outputDirectory);
     for (var role : AuthorityRole.values())
       Files.delete(directory.resolve("state/authorities").resolve(role.directory())
           .resolve("ca_private_key.pem"));
-    var selected = new EcosystemProvisioner(new SecretResolver(
+    var selected = new RoleProvisioner(new SecretResolver(
         name -> name.equals("TRUST_SOURCE_KEYSTORE_PASSWORD") ? "test-password" : null));
-    selected.generate(config, List.of("lote"), EcosystemFixture.quiet());
+    selected.generateLote(config, EcosystemFixture.quiet());
     var after = snapshot(outputDirectory);
     before.remove(directory.resolve("config/trust-source/signed/trusted-entities.json").toString());
     after.remove(directory.resolve("config/trust-source/signed/trusted-entities.json").toString());
@@ -188,14 +188,14 @@ class EcosystemProvisionerTest {
   void trust_signer_rotation_also_refreshes_both_signed_documents() throws Exception {
     var config = EcosystemFixture.configuration(directory);
     var provisioner = EcosystemFixture.provisioner();
-    provisioner.initializeAuthorities(config, EcosystemFixture.quiet());
-    provisioner.generate(config, List.of(), EcosystemFixture.quiet());
+    EcosystemFixture.initializeAuthorities(config);
+    provisioner.generate(config, EcosystemFixture.quiet());
     var previousKey =
         load(directory.resolve("config/certificates/trust-list-signer/trust_source.p12"))
             .getCertificate("trust_source").getPublicKey();
-    var selected = new EcosystemProvisioner(new SecretResolver(
+    var selected = new RoleProvisioner(new SecretResolver(
         name -> name.equals("TRUST_SOURCE_KEYSTORE_PASSWORD") ? "test-password" : null));
-    selected.generate(config, List.of("trust-source"), EcosystemFixture.quiet());
+    selected.generateTrustSource(config, EcosystemFixture.quiet());
     var currentKey =
         load(directory.resolve("config/certificates/trust-list-signer/trust_source.p12"))
             .getCertificate("trust_source").getPublicKey();
@@ -211,11 +211,11 @@ class EcosystemProvisionerTest {
   void missing_passwords_fail_before_any_output_is_changed() throws Exception {
     var config = EcosystemFixture.configuration(directory);
     var outputDirectory = Path.of(config.outputDirectory());
-    EcosystemFixture.provisioner().initializeAuthorities(config, EcosystemFixture.quiet());
+    EcosystemFixture.initializeAuthorities(config);
     var before = snapshot(outputDirectory);
     var provisioner = new EcosystemProvisioner(new SecretResolver(
         name -> name.equals("TRUST_SOURCE_KEYSTORE_PASSWORD") ? null : "test-password"));
-    assertThatThrownBy(() -> provisioner.generate(config, List.of(), EcosystemFixture.quiet()))
+    assertThatThrownBy(() -> provisioner.generate(config, EcosystemFixture.quiet()))
         .hasMessageContaining("not set or empty");
     assertThat(snapshot(outputDirectory)).isEqualTo(before);
   }
@@ -225,30 +225,22 @@ class EcosystemProvisionerTest {
     var config = EcosystemFixture.configuration(directory);
     var outputDirectory = Path.of(config.outputDirectory());
     var stateDirectory = Path.of(config.stateDirectory());
-    assertThatThrownBy(() -> EcosystemFixture.provisioner().generate(config, List.of("pid-issuer"),
-        EcosystemFixture.quiet())).hasMessageContaining("init-authorities");
+    assertThatThrownBy(() -> new RoleProvisioner(new SecretResolver(name -> "test-password"))
+        .generatePidIssuer(config,
+            EcosystemFixture.quiet()))
+        .hasMessageContaining("authorities init");
     assertThat(Files.exists(stateDirectory)).isFalse();
     assertThat(Files.exists(outputDirectory)).isFalse();
   }
 
   @Test
-  void unknown_targets_fail_before_reading_secrets_or_writing_files() throws Exception {
-    var config = EcosystemFixture.configuration(directory);
-    var provisioner = new EcosystemProvisioner(new SecretResolver(name -> {
-      throw new AssertionError("Secret lookup was not expected");
-    }));
-    assertThatThrownBy(
-        () -> provisioner.generate(config, List.of("pid-issure"), EcosystemFixture.quiet()))
-        .hasMessageContaining("Unknown generation target");
-    assertThat(Files.exists(Path.of(config.outputDirectory()))).isFalse();
-  }
-
-  @Test
   void trust_documents_do_not_create_a_missing_signer_implicitly() throws Exception {
     var config = EcosystemFixture.configuration(directory);
-    EcosystemFixture.provisioner().initializeAuthorities(config, EcosystemFixture.quiet());
-    assertThatThrownBy(() -> EcosystemFixture.provisioner().generate(config, List.of("lote"),
-        EcosystemFixture.quiet())).hasMessageContaining("KeyStore file not found");
+    EcosystemFixture.initializeAuthorities(config);
+    assertThatThrownBy(
+        () -> new RoleProvisioner(new SecretResolver(name -> "test-password")).generateLote(config,
+            EcosystemFixture.quiet()))
+        .hasMessageContaining("KeyStore file not found");
     assertThat(Files.exists(
         directory.resolve("config/certificates/trust-list-signer/trust_source.p12")))
         .isFalse();
@@ -282,9 +274,11 @@ class EcosystemProvisionerTest {
     Files.writeString(file, yaml);
     var config = new ConfigurationLoader().load(file);
     var provisioner = EcosystemFixture.provisioner();
-    provisioner.initializeAuthorities(config, EcosystemFixture.quiet());
-    provisioner.generate(config, List.of(), EcosystemFixture.quiet());
-    provisioner.generate(config, List.of("lote", "status-list"), EcosystemFixture.quiet());
+    EcosystemFixture.initializeAuthorities(config);
+    provisioner.generate(config, EcosystemFixture.quiet());
+    var documents = new RoleProvisioner(new SecretResolver(name -> "test-password"));
+    documents.generateLote(config, EcosystemFixture.quiet());
+    documents.generateStatusList(config, EcosystemFixture.quiet());
     for (String artifact : artifacts) {
       assertThat(Files.isRegularFile(directory.resolve("config/relocated").resolve(artifact)))
           .as(artifact).isTrue();

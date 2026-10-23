@@ -31,7 +31,7 @@ public final class AuthorityStore {
     this.config = config;
     this.authorityDirectory = Path.of(config.stateDirectory()).resolve("authorities");
     this.publicationDirectory = Path.of(config.outputDirectory())
-        .resolve(config.trustSource().publicationDirectory());
+        .resolve(config.publication().directory());
   }
 
   private Path certificatePath(AuthorityRole role) {
@@ -47,9 +47,7 @@ public final class AuthorityStore {
   }
 
   public CertificateAuthority initialize(AuthorityRole role) {
-    boolean anyFileExists = Arrays.asList(keyPath(role), certificatePath(role), crlPath(role))
-        .stream().anyMatch(Files::exists);
-    if (!anyFileExists) {
+    if (!hasMaterial(role)) {
       var created = manager.createAuthority(role.directory(), role.commonName(),
           config.organization());
       manager.saveAuthority(created, authorityDirectory.resolve(role.directory()));
@@ -57,6 +55,17 @@ public final class AuthorityStore {
     var authority = load(role);
     publish(role, authority);
     return authority;
+  }
+
+  /** Preflight initialized or incomplete roots before creating any selected authority. */
+  public void validateExisting(AuthorityRole role) {
+    if (hasMaterial(role))
+      load(role);
+  }
+
+  private boolean hasMaterial(AuthorityRole role) {
+    return Arrays.asList(keyPath(role), certificatePath(role), crlPath(role))
+        .stream().anyMatch(Files::exists);
   }
 
   public CertificateAuthority load(AuthorityRole role) {
@@ -96,7 +105,7 @@ public final class AuthorityStore {
     if (!Files.isRegularFile(file))
       throw new PkiConfigurationException("Missing authority material for "
           + role.directory() + ": " + file
-          + ". Run init-authorities for managed roots; incomplete roots must be repaired, never replaced.");
+          + ". Run authorities init for managed roots; incomplete roots must be repaired, never replaced.");
   }
 
   public void publish(AuthorityRole role, CertificateAuthority authority) {
@@ -105,7 +114,7 @@ public final class AuthorityStore {
     writer.pem(publicationDirectory.resolve(role.directory()).resolve("revocation-list.pem"),
         authority.crl());
     if (role == AuthorityRole.TRUST_SOURCE)
-      writer.pem(Path.of(config.outputDirectory()).resolve(config.trustSource().rootCrlFile()),
+      writer.pem(Path.of(config.outputDirectory()).resolve(config.publication().rootCrlFile()),
           authority.crl());
   }
 }

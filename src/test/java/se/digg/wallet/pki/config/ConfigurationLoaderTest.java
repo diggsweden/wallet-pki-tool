@@ -113,6 +113,45 @@ class ConfigurationLoaderTest {
         .hasMessageContaining("schemaVersion");
   }
 
+  @Test
+  void the_single_participant_example_has_no_unrelated_role_requirements() {
+    var config = loader.load(Path.of("examples/wallet-provider.yaml"));
+
+    assertThat(config.walletProvider().keystoreFile())
+        .isEqualTo("certificates/wallet-provider/wallet_provider.p12");
+    assertThat(config.publication().baseUrl()).isEqualTo("http://trust-source");
+    assertThat(config.pidIssuer()).isNull();
+    assertThat(config.verifier()).isNull();
+    assertThat(config.trustSource()).isNull();
+  }
+
+  @Test
+  void legacy_publication_settings_resolve_to_the_shared_publication_contract() throws Exception {
+    var config = loader.load(EcosystemFixture.configurationFile(directory));
+
+    assertThat(config.publication())
+        .isEqualTo(new PublicationConfig("http://trust-source", "trust-source",
+            "trust-source/revocation-list.pem"));
+  }
+
+  @Test
+  void mixed_publication_locations_are_rejected() throws Exception {
+    assertInvalid(EcosystemFixture.yaml(directory) + """
+        publication:
+          baseUrl: http://another-trust-source
+          directory: public
+          rootCrlFile: public/revocation-list.pem
+        """, "not both");
+  }
+
+  @Test
+  void shared_publication_settings_preserve_private_state_separation() throws Exception {
+    String config = Files.readString(Path.of("examples/wallet-provider.yaml"))
+        .replace("stateDirectory: ./.wallet-pki", "stateDirectory: ./config/trust-source/private");
+
+    assertInvalid(config, "must not overlap");
+  }
+
   private void assertInvalid(String yaml, String message) throws Exception {
     Path file = directory.resolve("invalid.yaml");
     Files.writeString(file, yaml);

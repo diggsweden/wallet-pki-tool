@@ -4,41 +4,45 @@
 
 package se.digg.wallet.pki.cli;
 
-import java.io.File;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
-import picocli.CommandLine.Option;
+import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
-import se.digg.wallet.pki.application.EcosystemProvisioner;
+import se.digg.wallet.pki.application.AuthorityProvisioner;
 import se.digg.wallet.pki.config.ConfigurationLoader;
-import se.digg.wallet.pki.config.SecretResolver;
+import se.digg.wallet.pki.domain.AuthorityRole;
 
 /** The only CLI operation that can create managed root authorities. */
-@Command(name = "init-authorities", mixinStandardHelpOptions = true,
-    description = "Initialize managed authorities, validate existing roots and publish their certificates/CRLs. Never replaces an existing root.")
-public class InitAuthoritiesCommand implements Callable<Integer> {
+@Command(name = "init", mixinStandardHelpOptions = true,
+    description = "Create missing authorities and publish their certificates/CRLs. "
+        + "Reuse existing roots; never replace incomplete roots. "
+        + "Requires shared organization/publication settings; no keystore passwords required.")
+final class InitAuthoritiesCommand implements Callable<Integer> {
   @Spec
   private CommandSpec spec;
-  @Option(names = {"-c", "--config"}, required = true,
-      description = "Role-based ecosystem YAML configuration.")
-  private File configFile;
+  @Parameters(paramLabel = "ROLES",
+      description = "Optional authorities: pid-issuer, wallet-provider, "
+          + "verifier-access, verifier-registration, trust-source. Default: all five.")
+  private List<AuthorityRole> roles = new ArrayList<>();
   private final ConfigurationLoader loader;
-  private final EcosystemProvisioner provisioner;
+  private final Supplier<Path> configuration;
 
-  public InitAuthoritiesCommand() {
-    this(new ConfigurationLoader(), new SecretResolver());
-  }
-
-  public InitAuthoritiesCommand(ConfigurationLoader loader, SecretResolver secrets) {
+  InitAuthoritiesCommand(ConfigurationLoader loader, Supplier<Path> configuration) {
     this.loader = loader;
-    this.provisioner = new EcosystemProvisioner(secrets);
+    this.configuration = configuration;
   }
 
   @Override
   public Integer call() {
     try {
-      provisioner.initializeAuthorities(loader.load(configFile.toPath()),
+      new AuthorityProvisioner().initialize(loader.load(configuration.get()),
+          roles.isEmpty() ? EnumSet.allOf(AuthorityRole.class) : EnumSet.copyOf(roles),
           spec.commandLine().getOut());
       return 0;
     } catch (Exception e) {

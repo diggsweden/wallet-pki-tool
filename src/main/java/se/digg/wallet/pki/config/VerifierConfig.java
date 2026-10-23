@@ -9,11 +9,6 @@ import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 /** Separate access and registration hierarchies for the verifier. */
 public record VerifierConfig(Access access, Registration registration) {
-  public VerifierConfig {
-    Checks.required(access, "verifier.access");
-    Checks.required(registration, "verifier.registration");
-  }
-
   public record Access(String keystoreFile, String commonName,
       SubjectAlternativeNames subjectAlternativeNames, PasswordSource keystorePassword) {
     public Access {

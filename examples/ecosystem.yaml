@@ -12,6 +12,11 @@ organization:
   country: SE
   identifier: VATSE-12345678
 
+publication:
+  baseUrl: http://trust-source
+  directory: trust-source
+  rootCrlFile: trust-source/revocation-list.pem
+
 pidIssuer:
   keystoreFile: certificates/issuer/pid_issuer.p12
   signing:
@@ -85,15 +90,12 @@ verifier:
         email: walletecosystem@example.com
 
 trustSource:
-  publicationDirectory: trust-source
-  rootCrlFile: trust-source/revocation-list.pem
   signer:
     keystoreFile: certificates/trust-list-signer/trust_source.p12
     certificateFile: certificates/trust-list-signer/trust_source_cert.pem
     commonName: Trust Source (Ecosystem)
     keystorePassword:
       env: TRUST_SOURCE_KEYSTORE_PASSWORD
-  publicationBaseUrl: http://trust-source
   lote:
     outputFile: trust-source/signed/trusted-entities.json
     name: Local LoTE

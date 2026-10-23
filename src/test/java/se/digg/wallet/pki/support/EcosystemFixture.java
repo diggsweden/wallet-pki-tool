@@ -9,6 +9,9 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumSet;
+import se.digg.wallet.pki.application.AuthorityProvisioner;
+import se.digg.wallet.pki.domain.AuthorityRole;
 import se.digg.wallet.pki.application.EcosystemProvisioner;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.PkiConfiguration;
@@ -32,6 +35,10 @@ public final class EcosystemFixture {
 
   public static PkiConfiguration configuration(Path directory) throws IOException {
     return new ConfigurationLoader().load(configurationFile(directory));
+  }
+
+  public static void initializeAuthorities(PkiConfiguration config) {
+    new AuthorityProvisioner().initialize(config, EnumSet.allOf(AuthorityRole.class), quiet());
   }
 
   public static EcosystemProvisioner provisioner() {
