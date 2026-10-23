@@ -8,9 +8,10 @@ import java.nio.file.Path;
 import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.Organization;
 
-/** Complete configuration for the five wallet ecosystem roles. */
+/** Shared settings and optional wallet roles; each operation requires its own role inputs. */
 public record PkiConfiguration(int schemaVersion, String stateDirectory, String outputDirectory,
-    Organization organization, PidIssuerConfig pidIssuer, WalletProviderConfig walletProvider,
+    Organization organization, PublicationConfig publication,
+    PidIssuerConfig pidIssuer, WalletProviderConfig walletProvider,
     VerifierConfig verifier, TrustSourceConfig trustSource) {
   public PkiConfiguration {
     if (schemaVersion != 1)
@@ -19,15 +20,21 @@ public record PkiConfiguration(int schemaVersion, String stateDirectory, String 
     Checks.text(stateDirectory, "stateDirectory");
     Checks.text(outputDirectory, "outputDirectory");
     Checks.required(organization, "organization");
-    Checks.required(pidIssuer, "pidIssuer");
-    Checks.required(walletProvider, "walletProvider");
-    Checks.required(verifier, "verifier");
-    Checks.required(trustSource, "trustSource");
+    if (publication == null && trustSource != null) {
+      publication = new PublicationConfig(trustSource.publicationBaseUrl(),
+          trustSource.publicationDirectory(), trustSource.rootCrlFile());
+    } else if (publication != null && trustSource != null
+        && (trustSource.publicationBaseUrl() != null
+            || trustSource.publicationDirectory() != null || trustSource.rootCrlFile() != null)) {
+      throw new IllegalArgumentException(
+          "Configure publication settings in publication or trustSource, not both");
+    }
+    Checks.required(publication, "publication");
     Path state = Path.of(stateDirectory).toAbsolutePath().normalize();
-    Path publication =
-        Path.of(outputDirectory).resolve(trustSource.publicationDirectory()).toAbsolutePath()
+    Path publicDirectory =
+        Path.of(outputDirectory).resolve(publication.directory()).toAbsolutePath()
             .normalize();
-    if (state.startsWith(publication) || publication.startsWith(state))
+    if (state.startsWith(publicDirectory) || publicDirectory.startsWith(state))
       throw new IllegalArgumentException(
           "Private state and public trust-source directories must not overlap");
   }

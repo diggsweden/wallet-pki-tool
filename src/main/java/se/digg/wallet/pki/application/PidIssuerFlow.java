@@ -4,15 +4,20 @@
 
 package se.digg.wallet.pki.application;
 
+import java.io.PrintWriter;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.security.cert.Certificate;
 import se.digg.wallet.pki.config.PidIssuerConfig;
+import se.digg.wallet.pki.config.PkiConfiguration;
+import se.digg.wallet.pki.config.SecretResolver;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.crypto.KeystoreManager;
+import se.digg.wallet.pki.domain.AuthorityRole;
 import se.digg.wallet.pki.domain.CertificateSubject;
-import se.digg.wallet.pki.domain.Organization;
+import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.PidIssuerMaterial;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.trustlist.RegistrationDocuments;
@@ -21,36 +26,56 @@ import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 public final class PidIssuerFlow {
   private final EcKeyGenerator keys = new EcKeyGenerator();
   private final KeystoreManager keystores = new KeystoreManager();
-  private final CertificateProfileIssuer certificates;
-  private final Organization organization;
-  private final Path outputDirectory;
+  private final SecretResolver secrets;
 
-  public PidIssuerFlow(Organization organization, CertificateProfileIssuer certificates,
-      Path outputDirectory) {
-    this.organization = organization;
-    this.certificates = certificates;
-    this.outputDirectory = outputDirectory;
+  public PidIssuerFlow(SecretResolver secrets) {
+    this.secrets = secrets;
   }
 
-  public void generate(PidIssuerConfig config, CertificateAuthority authority, char[] password) {
+  public void generate(PkiConfiguration config, PrintWriter out) {
+    try (var inputs = loadInputs(config)) {
+      generate(config, inputs, out);
+    }
+  }
+
+  static PidIssuerConfig requireConfiguration(PkiConfiguration config) {
+    return Checks.required(config.pidIssuer(), "pidIssuer");
+  }
+
+  ServicePkiInputs loadInputs(PkiConfiguration config) {
+    var pidIssuer = requireConfiguration(config);
+    return ServicePkiInputs.load(config, AuthorityRole.PID_ISSUER,
+        pidIssuer.keystorePassword(), secrets);
+  }
+
+  void generate(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {
+    var pidIssuer = config.pidIssuer();
+    var authority = inputs.authority();
+    var organization = config.organization();
+    var outputDirectory = Path.of(config.outputDirectory());
+    var certificates =
+        new CertificateProfileIssuer(new SecureRandom(), config.publication().baseUrl());
     var signingKey = keys.generateKeyPair();
     var signing = new SigningIdentity(signingKey,
-        certificates.issuePidSigningCertificate(config.signing().subject(organization),
+        certificates.issuePidSigningCertificate(pidIssuer.signing().subject(organization),
             signingKey.getPublic(), authority));
     var nonceKey = keys.generateKeyPair();
     var nonce = new SigningIdentity(nonceKey, certificates.issueEncryptionCertificate(
         new CertificateSubject("nonce-encryption", organization,
-            config.encryption().subjectAlternativeNames()),
+            pidIssuer.encryption().subjectAlternativeNames()),
         nonceKey.getPublic(), authority));
     var requestKey = keys.generateKeyPair();
     var request = new SigningIdentity(requestKey, certificates.issueEncryptionCertificate(
         new CertificateSubject("request-encryption", organization,
-            config.encryption().subjectAlternativeNames()),
+            pidIssuer.encryption().subjectAlternativeNames()),
         requestKey.getPublic(), authority));
     var material = new PidIssuerMaterial(authority, signing, nonce, request);
-    writeKeystore(material, outputDirectory.resolve(config.keystoreFile()), password);
-    new RegistrationDocuments().writePidIssuer(config.registration(), material.signing(),
+    writeKeystore(material, outputDirectory.resolve(pidIssuer.keystoreFile()),
+        inputs.keystorePassword());
+    new RegistrationDocuments().writePidIssuer(pidIssuer.registration(), material.signing(),
         outputDirectory);
+    inputs.publishAuthority();
+    out.println("Generated: pid-issuer (new keys; selected files replaced)");
   }
 
   private void writeKeystore(PidIssuerMaterial material, Path keystoreFile, char[] password) {

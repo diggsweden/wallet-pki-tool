@@ -12,3 +12,4 @@
 * `just verify`: Run all linters, formatting checks, and security scans.
 * `just test`: Run Maven tests.
 * `just lint-fix`: Format Java and other files.
+
