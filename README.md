@@ -1,300 +1,166 @@
-# Wallet PKI Tool (`wallet-pki-tool`)
+# Wallet PKI Tool
 
 [![License](https://img.shields.io/badge/License-CC0_1.0-blue.svg)](LICENSES/CC0-1.0.txt)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/diggsweden/wallet-pki-tool/badge)](https://securityscorecards.dev/viewer/?uri=github.com/diggsweden/wallet-pki-tool)
 
-`wallet-pki-tool` is a dedicated command-line interface (CLI) for automating certificate, keystore (`.p12`), and List of Trusted Entities (LoTE) generation across the European Digital Identity (EUDI) Wallet ecosystem.
+Generates certificates, keystores and signed trust documents for the Digg wallet development ecosystem.
 
-It replaces fragile and complex bash scripts with a strongly typed, unit-tested Java engine driven by declarative YAML configurations.
+## Getting started
 
----
-
-## Key Features
-
-* **Declarative EUDI Model:** Driven by clean, human-readable YAML configurations without cryptic OpenSSL syntax.
-* **Standard-Compliant:** Implements EUDI certificate profiles ([ETSI TS 119 411-8](https://www.etsi.org/deliver/etsi_ts/119400_119499/11941108/01.01.01_60/ts_11941108v010101p.pdf), [ETSI TS 119 475](https://www.etsi.org/deliver/etsi_ts/119400_119499/119475/01.02.01_60/ts_119475v010201p.pdf)) and LoTE trust lists ([ETSI TS 119 602](https://www.etsi.org/deliver/etsi_ts/119600_119699/119602/01.01.01_60/ts_119602v010101p.pdf)).
-* **Secure Secret Management:** Passwords and private keys are resolved strictly from environment variables or secret files (no passwords exposed in CLI flags or process tables).
-* **Selective Target Generation:** Allows rotating or regenerating specific certificates without resetting the entire ecosystem.
-* **Automated Licensing:** Produces REUSE-compliant `.license` files for all generated artifacts.
-
----
-
-## Quick Start
-
-Generated PKCS#12 keystores (`.p12`) require encryption passwords to protect their private keys. The YAML configuration specifies which environment variables contain these passwords (via the `passwordEnv` property). Ensure required passwords are set in the environment or available in a `.env` file before executing generation.
-
-`wallet-pki-tool` executes directly inside a container using Podman or Docker (no local Java installation required):
+Requires Java 25 and Maven. Copy [examples/ecosystem.yaml](examples/ecosystem.yaml), adjust participant details and output paths, and set the five password environment variables named in the file.
 
 ```bash
-podman run --rm \
-  --userns=keep-id \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD":/workspace:z \
-  -w /workspace \
-  --env-file .env \
-  ghcr.io/diggsweden/wallet-pki-tool:latest \
-  generate --config ./config/certificates/ecosystem.yaml
+mvn package
+java -jar target/wallet-pki-tool.jar authorities init -c examples/ecosystem.yaml
+java -jar target/wallet-pki-tool.jar ecosystem generate -c examples/ecosystem.yaml
 ```
 
-To build the container image locally:
+Authority initialization is a separate operation. It creates missing roots, reuses complete existing material, and refuses to replace incomplete roots. It needs no keystore passwords. Participant generation requires initialized authorities and creates new keys on every run, replacing the selected output files.
+
+Use `--help` at any level to see the available operations and their prerequisites. `-c`/`--config` can appear before or after the command path. Omitting an operation never generates files.
+
+## Commands and contracts
+
+| Command | Creates or replaces | Required inputs |
+| :--- | :--- | :--- |
+| `authorities init [ROLE...]` | Missing CAs; selected public CA certificates and CRLs | Shared settings and selected `authorities` common names; no participant configuration or passwords. Defaults to all five authorities. |
+| `pid-issuer generate` | Three new keys in one keystore; issuer registration JWT/JSON | `pidIssuer`, its authority and password |
+| `wallet-provider generate` | New wallet attestation key and keystore | `walletProvider`, its authority and password |
+| `verifier access generate` | New relying-party access key and keystore | `verifier.access`, its authority and password |
+| `verifier registration generate` | New registration key, keystore, JWT and environment file | `verifier.registration`, its authority and password |
+| `trust-source generate` | New signer key, keystore and public certificate; LoTE and development status-list fixture | `trustSource.signer` and `lote`; trust-source authority/password and configured public LoTE CAs |
+| `trust-source lote generate` | Only the LoTE, retaining the signer | `trustSource.signer` and `lote`; existing signer keystore/password, public trust-source CA and configured public LoTE CAs |
+| `ecosystem generate` | All five participant artifact sets and their documents | Complete role configuration, all five authorities and passwords |
+
+Authority names are `pid-issuer`, `wallet-provider`, `verifier-access`, `verifier-registration`, and `trust-source`.
+
+Their certificate common names are configured separately under `authorities`. Each operation requires settings only for the local CAs it uses; initializing all five requires all five entries.
+
+Each participant command reads only its required secrets and authorities and leaves unrelated artifacts unchanged. LoTE-only generation needs no CA private keys. Replacing the trust signer always rebuilds its documents so they match the new signer. The LoTE contains the configured CA certificates, so regenerating participant leaves does not require a new LoTE.
+
+The bulk command checks all configuration, passwords, authorities and trust anchors before writing. Output files are then written directly, as in the individual flows; a filesystem or later generation failure can leave partial updates.
+
+## Generate one participant
+
+[examples/wallet-provider.yaml](examples/wallet-provider.yaml) contains only shared settings and the wallet-provider role:
 
 ```bash
-podman build -t wallet-pki-tool -f Containerfile .
+java -jar target/wallet-pki-tool.jar authorities init wallet-provider -c examples/wallet-provider.yaml
+java -jar target/wallet-pki-tool.jar wallet-provider generate -c examples/wallet-provider.yaml
 ```
 
----
+Other roles can be configured independently in the same way. A verifier can have only `access` or only `registration`. LoTE-only generation requires LoTE settings and the signer keystore/password reference; `signer.commonName` and `certificateFile` are needed only when generating a new signer. Supplied sections are validated even if a command does not use them.
 
-### Selective Target Rotation
-
-Specific target IDs can be passed at the end of the command to selectively regenerate only those artifacts:
+To rebuild the LoTE without replacing the signer:
 
 ```bash
-podman run --rm \
-  --userns=keep-id \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD":/workspace:z \
-  -w /workspace \
-  --env-file .env \
-  ghcr.io/diggsweden/wallet-pki-tool:latest \
-  generate --config ./config/certificates/ecosystem.yaml \
-  verifier-access-certificate
+java -jar target/wallet-pki-tool.jar trust-source lote generate -c examples/ecosystem.yaml
 ```
 
-Multiple targets can also be combined:
+The LoTE sequence number remains configurable; increment it in YAML when publishing an updated list.
 
-```bash
-podman run --rm \
-  --userns=keep-id \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD":/workspace:z \
-  -w /workspace \
-  --env-file .env \
-  ghcr.io/diggsweden/wallet-pki-tool:latest \
-  generate --config ./config/certificates/ecosystem.yaml \
-  pid-issuer wallet-provider
-```
+### Configure LoTE authorities
 
----
-
-## Verifying Generated Artifacts
-
-Once generated, you can inspect and verify the contents of the keystores, certificates, and trust lists using standard tools:
-
-### 1. Inspect Keystores (`.p12`) with Java `keytool`
-
-View certificate aliases, key algorithms (EC P-256), and certificate chain hierarchy:
-
-```bash
-keytool -list -v \
-  -keystore ./config/certificates/issuer/pid_issuer.p12 \
-  -storepass "$PID_ISSUER_KEYSTORE_PASSWORD"
-```
-
-### 2. Inspect Keystores (`.p12`) with `openssl`
-
-Display human-readable certificate details (Subject, Issuer, SANs, and QCStatements):
-
-```bash
-openssl pkcs12 \
-  -in ./config/certificates/issuer/pid_issuer.p12 \
-  -nokeys \
-  -passin env:PID_ISSUER_KEYSTORE_PASSWORD | openssl x509 -text -noout
-```
-
-### 3. Inspect Root CA Certificates (`.pem`)
-
-Verify CA Distinguished Name (DN), validity, and basic constraints:
-
-```bash
-openssl x509 \
-  -in ./config/certificates/ca/pid-issuer-ca/ca.pem \
-  -text -noout
-```
-
-### 4. Inspect Signed Trust List (LoTE JSON)
-
-Format and inspect the trusted entities in the LoTE document:
-
-```bash
-cat ./config/certificates/trust-source/signed/trusted-entities.json | jq .
-```
-
----
-
-## Configuration Reference (YAML)
-
-Configurations define **what** actors exist and **how** they relate to Certificate Authorities. The tool handles standard X.509 extensions, `qcStatements`, KeyUsages, and PKCS#12 formatting automatically.
-
-### Example: `ecosystem.yaml`
+Each type under `trustSource.lote.trustedAuthorities` is a list. An entry uses that type's current local CA unless `certificateFile` overrides it with a public PEM CA certificate:
 
 ```yaml
-environment: local
-outputDir: ./config/certificates
-
-# ---------------------------------------------------------------------------
-# 1. Certificate Authorities (CAs)
-# ---------------------------------------------------------------------------
-authorities:
-  - id: verifier-access-ca
-    commonName: "DIGG Wallet Verifier Access CA"
-  - id: verifier-registration-certificate
-    commonName: "DIGG Wallet Verifier Registration Certificate CA"
-  - id: pid-issuer-ca
-    commonName: "DIGG Wallet PID Issuer CA"
-  - id: wallet-provider-ca
-    commonName: "DIGG Wallet Provider CA"
-  - id: trust-source-ca
-    commonName: "DIGG Wallet Trust Source CA"
-
-# ---------------------------------------------------------------------------
-# 2. Service Certificates & Keystores (.p12)
-# ---------------------------------------------------------------------------
-certificates:
-  # Relying Party Access Certificate (WRPAC - ETSI TS 119 411-8)
-  - id: verifier-access-certificate
-    type: relying-party-access
-    ca: verifier-access-ca
-    keystore: ./verifier-access-certificate/verifier-access-certificate.p12
-    passwordEnv: VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "verifier-backend"
-    tradeName: "DIGG Verifier"
-    country: "SE"
-    organizationIdentifier: "VATSE-12345678"
-
-  # Relying Party Registration Certificate (WRPRC - ETSI TS 119 475)
-  - id: verifier-registration-certificate
-    type: relying-party-registration
-    ca: verifier-registration-certificate
-    keystore: ./verifier-registration-certificate/verifier-registration-certificate.p12
-    passwordEnv: VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "verifier-backend"
-    tradeName: "DIGG Verifier"
-    country: "SE"
-    organizationIdentifier: "VATSE-12345678"
-
-  # PID Issuer Service Certificate & Keystore
-  - id: pid-issuer
-    type: pid-issuer-service
-    ca: pid-issuer-ca
-    keystore: ./issuer/pid_issuer.p12
-    passwordEnv: PID_ISSUER_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "pid-issuer"
-
-  # Wallet Provider Service Certificate & Keystore
-  - id: wallet-provider
-    type: wallet-provider-service
-    ca: wallet-provider-ca
-    keystore: ./wallet-provider/wallet_provider.p12
-    passwordEnv: WALLET_PROVIDER_KEYSTORE_PASSWORD
-    sans:
-      - "localhost"
-      - "wallet-provider"
-
-# ---------------------------------------------------------------------------
-# 3. Trust Lists & Signed Tokens (LoTE - ETSI TS 119 602 / OAuth Status List)
-# ---------------------------------------------------------------------------
-trustLists:
-  - id: lote
-    type: etsi-119-602-lote
-    signerAuthority: trust-source-ca
-    outputFile: ./trust-source/signed/trusted-entities.json
-    entities:
-      - wallet-provider
-      - pid-issuer
-      - verifier-access-certificate
-      - verifier-registration-certificate
-
-  - id: status-list
-    type: oauth-status-list
-    signerAuthority: trust-source-ca
-    outputFile: ./trust-source/signed/status-list.jwt
-    url: "https://trust.example.se/signed/status-list.jwt"
+trustedAuthorities:
+  pidIssuer:
+    - entityName: Local PID Provider
+      serviceName: PID Issuance
+      informationUrl: http://localhost
+      streetAddress: Local
+    - entityName: Previous PID Provider
+      serviceName: Previous PID Issuance
+      informationUrl: http://localhost
+      streetAddress: Local
+      certificateFile: ./trust-anchors/previous-pid-ca.pem
 ```
 
----
+Use multiple entries for CA rotation overlap or external CAs. `certificateFile` is an input path relative to the working directory, or an absolute path; it is independent of `outputDirectory`. File overrides need no corresponding local CA or private key and are read without copying or changing the input file.
 
-## Configuration Fields
+The supported types are `pidIssuer`, `walletProvider`, `verifierAccess`, and `verifierRegistration`. Omitted types and empty lists contribute no entries and require no local CA. The containing type determines the service type, regardless of the certificate's subject. This also allows intentionally incomplete trust lists or CAs assigned to another type for negative testing. Missing files, malformed certificates and certificates without CA basic constraints are rejected before generation writes outputs.
 
-### Root Properties
+When migrating a single-entry configuration, turn each type's metadata object into a list by adding `-` before its first field and indenting the remaining fields.
 
-| Property | Type | Description |
-| :--- | :--- | :--- |
-| `environment` | `String` | Optional environment identifier (e.g. `local`, `sandbox`, `prod`). |
-| `outputDir` | `String` | Target base directory where generated certificates and keystores are written. |
-| `authorities` | `List` | List of Certificate Authority configurations. |
-| `certificates` | `List` | List of service certificates and PKCS#12 keystores to generate. |
-| `trustLists` | `List` | List of trust lists (such as LoTE) and tokens to compile and sign. |
+## Configuration
 
-### `authorities` Properties
+Schema version `1` keeps CA common names and role output filenames in YAML. Shared `organization`, `authorities`, `stateDirectory`, `outputDirectory`, and `caDistribution` settings are required:
 
-| Property | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `String` | **Yes** | Unique identifier for the CA referenced by service certificates. |
-| `commonName` | `String` | **Yes** | Subject Common Name (CN) for the CA certificate. |
-| `keyType` | `String` | No | Key algorithm and curve (defaults to `EC_P256`). |
-| `keyFile` | `String` | No | Optional path to existing private key file (for Kubernetes/OpenShift Sealed Secrets). |
-| `certFile` | `String` | No | Optional path to existing CA certificate. |
+```yaml
+authorities:
+  pidIssuer:
+    commonName: DIGG Wallet PID Issuer CA
+  walletProvider:
+    commonName: DIGG Wallet Provider CA
+  verifierAccess:
+    commonName: DIGG Wallet Verifier Access Certificate CA
+  verifierRegistration:
+    commonName: DIGG Wallet Verifier Registration Certificate CA
+  trustSource:
+    commonName: DIGG Wallet Trust Source CA
+```
 
-### `certificates` Properties
+Authority common names have no built-in defaults. The CA organization and country come from `organization`. Existing CA certificates must match these configured subjects: changing a common name or organization requires an explicit CA migration, and the tool refuses to replace existing material automatically. Keep the names above when migrating a configuration that uses the previous hardcoded subjects. Role identifiers and storage directories remain fixed.
 
-| Property | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `String` | **Yes** | Unique identifier for the certificate. |
-| `type` | `String` | No | Profile type (`relying-party-access`, `relying-party-registration`, `pid-issuer-service`, `wallet-provider-service`, `trust-source-signer`, `encryption`). |
-| `ca` | `String` | **Yes** | ID of the authority used to issue this certificate. |
-| `keystore` | `String` | **Yes** | Relative path where the `.p12` keystore should be written. |
-| `alias` | `String` | No | Custom alias for the private key and cert in the `.p12` store (defaults to `id` with hyphens `-` replaced by underscores `_`, e.g. `wallet-provider` -> `wallet_provider`). |
-| `passwordEnv` | `String` | Conditional | Environment variable name containing the keystore password. |
-| `passwordFile` | `String` | Conditional | File path containing the keystore password (alternative to `passwordEnv`). |
-| `sans` | `List<String>` | No | Subject Alternative Names (DNS hostnames, IP addresses, or URIs). |
-| `tradeName` | `String` | No | Trade name for Relying Party certificates. |
-| `country` | `String` | No | Two-letter country code (default: `SE`). |
-| `organizationIdentifier` | `String` | No | Legal entity identifier (e.g. `VATSE-...` or `NTRSE-...`). |
+```yaml
+caDistribution:
+  baseUrl: http://trust-source
+  directory: trust-source
+  rootCrlFile: trust-source/revocation-list.pem
+```
 
-### `trustLists` Properties
+`baseUrl` supplies the URLs embedded in certificates for retrieving CA certificates and CRLs. `directory` and `rootCrlFile` are output paths for public CA material to be served by a web server such as nginx. Artifact paths are relative to `outputDirectory`; other filesystem paths are relative to the directory where you run the command.
 
-| Property | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `id` | `String` | **Yes** | Unique identifier for the trust list. |
-| `type` | `String` | No | Trust list format (`etsi-119-602-lote` or `oauth-status-list`, default: `etsi-119-602-lote`). |
-| `signerAuthority` | `String` | **Yes** | Authority ID used to sign the trust list. |
-| `outputFile` | `String` | **Yes** | Output destination path for the signed JSON/JWT. |
-| `url` | `String` | No | Optional issuer URL (`iss`/`sub`) for OAuth Status List JWTs. |
-| `entities` | `List<String>` | No | Optional list of entity/certificate IDs to include in the LoTE. Defaults to auto-discovering wallet-provider and pid-issuer. |
+Passwords select exactly one environment variable or file:
 
----
+```yaml
+keystorePassword:
+  env: WALLET_PROVIDER_KEYSTORE_PASSWORD
+```
 
-## Secret Management
+```yaml
+keystorePassword:
+  file: /run/secrets/wallet-provider-password
+```
 
-To prevent sensitive passwords and private keys from leaking in shell history or process tables (`ps aux`), `wallet-pki-tool` supports two secure resolution mechanisms:
+The tool does not load `.env` files itself.
 
-1. **Environment Variables (`passwordEnv`):**  
-   Reads the password from the named environment variable at runtime.
-2. **Secret Files (`passwordFile`):**  
-   Reads the password from a mounted secret file (ideal for OpenShift/Kubernetes Sealed Secrets).
+## Output
 
----
+The examples keep private CA keys in `.wallet-pki/` and write service files under `config/`:
+
+```text
+config/
+  certificates/   Participant keystores and verifier registration files
+  pid-issuer/     Issuer registration files
+  trust-source/   Public CA certificates, CRLs and signed trust documents
+```
+
+Keep `.wallet-pki/` private and preserve it between runs. Losing it means losing the CA keys.
+
+The LoTE file is named `trusted-entities.json` for the consuming service, but contains a signed compact JWS.
+
+`trust-source generate` and `ecosystem generate` also create a signed development fixture with 8,192 valid status entries at `<caDistribution.directory>/signed/status-list.jwt`, using `<caDistribution.baseUrl>/signed/status-list.jwt` as its URL and the LoTE validity period; there are no status-list commands or settings, and revocation management is out of scope.
+
+## Container
+
+Mount the workspace and pass passwords through an environment file:
+
+```bash
+podman run --rm --userns=keep-id \
+  -v "$PWD":/workspace:z -w /workspace --env-file .env \
+  ghcr.io/diggsweden/wallet-pki-tool:latest \
+  authorities init -c examples/ecosystem.yaml
+```
+
+Run the same command with `ecosystem generate` in place of `authorities init` to generate all service files, or select an individual command path.
 
 ## Development
 
-The project uses [just](https://github.com/casey/just) and [mise](https://mise.jdx.dev/) for local workflow automation:
-
 ```bash
-# Bootstrap tools and dependencies
-just install
-
-# Run linters, formatting, and security audits
-just verify
-
-# Run unit tests
-just test
-
-# Auto-fix formatting issues
 just lint-fix
+just verify
 ```
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for tool setup.

@@ -17,8 +17,9 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import se.digg.wallet.pki.config.CertificateConfig;
-import se.digg.wallet.pki.config.CertificateConfigTestBuilder;
+import se.digg.wallet.pki.domain.CertificateSubject;
+import se.digg.wallet.pki.domain.Organization;
+import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 class KeystoreManagerTest {
 
@@ -28,30 +29,29 @@ class KeystoreManagerTest {
   private CertificateProfileIssuer issuer;
 
   @BeforeEach
-  void setUp(@TempDir Path tempDir) {
+  void setUp() {
     keystoreManager = new KeystoreManager();
     keyGenerator = new EcKeyGenerator();
     caManager = new CertificateAuthorityManager();
     issuer = new CertificateProfileIssuer();
   }
 
+  private CertificateSubject subject(String commonName) {
+    return new CertificateSubject(commonName, new Organization("DIGG", "SE", "VATSE-12345678"),
+        new SubjectAlternativeNames(List.of("localhost"), null, null));
+  }
+
   @Test
-  void shouldCreateAndSaveSingleKeyStore(@TempDir Path tempDir) throws Exception {
+  void single_key_stores_preserve_keys_and_certificate_chains(@TempDir Path tempDir)
+      throws Exception {
     // 1. Setup CA, service key pair, and certificate
     CertificateAuthority ca =
         caManager.createAuthority("wallet-provider-ca", "DIGG Wallet Provider CA");
     KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
 
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("wallet-provider")
-            .type("wallet-provider-service")
-            .tradeName("Wallet Provider")
-            .sans(List.of("localhost"))
-            .build();
 
     X509Certificate serviceCert =
-        issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
+        issuer.issuePidSigningCertificate(subject("Service"), serviceKeyPair.getPublic(), ca);
 
     char[] password = "provider-secret-pass".toCharArray();
     Path p12Path = tempDir.resolve("wallet-provider/wallet_provider.p12");
@@ -83,31 +83,24 @@ class KeystoreManagerTest {
   }
 
   @Test
-  void shouldCreateMultiKeyMergedKeyStore(@TempDir Path tempDir) throws Exception {
+  void merged_stores_preserve_all_three_key_entries(@TempDir Path tempDir) throws Exception {
     // 1. Setup CA, service certificate, and two encryption certificates
     CertificateAuthority ca =
         caManager.createAuthority("pid-issuer-ca", "DIGG Wallet PID Issuer CA");
 
     KeyPair primaryKey = keyGenerator.generateKeyPair();
-    CertificateConfig primaryConfig =
-        CertificateConfigTestBuilder.builder()
-            .id("pid-issuer")
-            .type("pid-issuer-service")
-            .tradeName("PID Issuer")
-            .sans(List.of("localhost"))
-            .build();
     X509Certificate primaryCert =
-        issuer.issueCertificate(primaryConfig, primaryKey.getPublic(), ca);
+        issuer.issuePidSigningCertificate(subject("PID Issuer"), primaryKey.getPublic(), ca);
 
     KeyPair nonceKey = keyGenerator.generateKeyPair();
     X509Certificate nonceCert =
         issuer.issueEncryptionCertificate(
-            "nonce-encryption", List.of("localhost"), "SE", nonceKey.getPublic(), ca);
+            subject("nonce-encryption"), nonceKey.getPublic(), ca);
 
     KeyPair requestKey = keyGenerator.generateKeyPair();
     X509Certificate requestCert =
         issuer.issueEncryptionCertificate(
-            "request-encryption", List.of("localhost"), "SE", requestKey.getPublic(), ca);
+            subject("request-encryption"), requestKey.getPublic(), ca);
 
     char[] password = "pid-issuer-secret".toCharArray();
     Path p12Path = tempDir.resolve("issuer/pid_issuer.p12");
@@ -147,21 +140,14 @@ class KeystoreManagerTest {
   }
 
   @Test
-  void shouldCreateTrustStoreWithCertificates(@TempDir Path tempDir) throws Exception {
+  void truststores_preserve_certificate_entries(@TempDir Path tempDir) throws Exception {
     // 1. Setup CA and service certificate
     CertificateAuthority ca =
         caManager.createAuthority("pid-issuer-ca", "DIGG Wallet PID Issuer CA");
     KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
 
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("pid-issuer")
-            .type("pid-issuer-service")
-            .tradeName("PID Issuer")
-            .sans(List.of("localhost"))
-            .build();
     X509Certificate serviceCert =
-        issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
+        issuer.issuePidSigningCertificate(subject("Service"), serviceKeyPair.getPublic(), ca);
 
     char[] password = "trust-store-password".toCharArray();
     Path p12Path = tempDir.resolve("trusted_issuers.p12");
@@ -181,21 +167,13 @@ class KeystoreManagerTest {
   }
 
   @Test
-  void shouldThrowWhenLoadingWithWrongPassword(@TempDir Path tempDir) throws Exception {
+  void incorrect_keystore_passwords_are_rejected(@TempDir Path tempDir) throws Exception {
     // 1. Save keystore with known password
     CertificateAuthority ca =
         caManager.createAuthority("test-ca", "DIGG Test CA");
     KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
-    CertificateConfig config =
-        CertificateConfigTestBuilder.builder()
-            .id("test-cert")
-            .type("relying-party-access")
-            .tradeName("Test")
-            .organizationIdentifier("VATSE-12345678")
-            .sans(List.of("localhost"))
-            .build();
     X509Certificate serviceCert =
-        issuer.issueCertificate(config, serviceKeyPair.getPublic(), ca);
+        issuer.issuePidSigningCertificate(subject("Service"), serviceKeyPair.getPublic(), ca);
 
     char[] correctPassword = "correct-password".toCharArray();
     Path p12Path = tempDir.resolve("test.p12");
@@ -217,7 +195,7 @@ class KeystoreManagerTest {
   }
 
   @Test
-  void shouldThrowWhenLoadingNonExistentFile() {
+  void missing_keystore_files_are_rejected() {
     // Verify exception when keystore file is missing on disk
     Path missingPath = Path.of("non-existent-keystore.p12");
     char[] password = "any-password".toCharArray();
