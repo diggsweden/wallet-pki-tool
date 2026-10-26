@@ -61,7 +61,7 @@ verifier:
     commonName: Verifier Backend (Ecosystem)
     subjectAlternativeNames:
       dns: [localhost, verifier-backend]
-      uri: ['https://localhost/demo-verifier']
+      uri: ["https://localhost/demo-verifier"]
     keystorePassword:
       env: VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD
   registration:
