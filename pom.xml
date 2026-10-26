@@ -12,7 +12,7 @@ SPDX-License-Identifier: CC0-1.0
   <modelVersion>4.0.0</modelVersion>
   <groupId>se.digg</groupId>
   <artifactId>wallet-pki-tool</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.1.2</version>
   <name>wallet-pki-tool</name>
   <description>
     A command line interface for automating PKI, certificate and LoTE generation
