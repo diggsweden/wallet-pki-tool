@@ -126,20 +126,6 @@ keystorePassword:
 
 The tool does not load `.env` files itself.
 
-### Migrating the wallet generation role
-
-The `wallet-attestation-issuer` command and `walletAttestationIssuer` YAML sections
-replace `wallet-provider` and `walletProvider`. Update the authority directory,
-output path and password reference when migrating a configuration. The generated
-keystore alias is `wallet_attestation_issuer`. Existing CA subjects must still
-match the configured common name; the command does not migrate or replace roots.
-
-A legacy wallet-provider service can retain its existing identity during the
-migration. Include its public CA as an additional `certificateFile` entry under
-`trustSource.lote.trustedAuthorities.walletAttestationIssuer`; both entries use
-the standard wallet issuance service type. The generator does not renew that
-legacy identity.
-
 ## Output
 
 The examples keep private CA keys in `.wallet-pki/` and write service files under `config/`:
@@ -154,9 +140,6 @@ config/
 Keep `.wallet-pki/` private and preserve it between runs. Losing it means losing the CA keys.
 
 The LoTE file is named `trusted-entities.json` for the consuming service, but contains a signed compact JWS.
-
-On POSIX filesystems, public artifacts use `0644` permissions for container
-consumers. Newly created CA private keys retain owner-only permissions.
 
 `trust-source generate` and `ecosystem generate` also create a signed development fixture with 8,192 valid status entries at `<caDistribution.directory>/signed/status-list.jwt`, using `<caDistribution.baseUrl>/signed/status-list.jwt` as its URL and the LoTE validity period; there are no status-list commands or settings, and revocation management is out of scope.
 
