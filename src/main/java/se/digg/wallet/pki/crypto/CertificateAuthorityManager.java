@@ -52,7 +52,7 @@ import se.digg.wallet.pki.domain.Organization;
  * Manages creation, signing, serialization, and deserialization of Root Certificate Authorities
  * (CAs) and Certificate Revocation Lists (CRLs).
  */
-public class CertificateAuthorityManager {
+public final class CertificateAuthorityManager {
 
   public static final String SIGNATURE_ALGORITHM = "SHA256withECDSA";
   public static final Duration DEFAULT_CA_VALIDITY = Duration.ofDays(3650); // 10 years

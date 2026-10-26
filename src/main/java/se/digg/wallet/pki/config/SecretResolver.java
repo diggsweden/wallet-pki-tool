@@ -11,7 +11,7 @@ import java.util.Objects;
 import java.util.function.Function;
 
 /** Resolves only the explicitly selected password source. */
-public class SecretResolver {
+public final class SecretResolver {
   private final Function<String, String> envProvider;
 
   public SecretResolver() {

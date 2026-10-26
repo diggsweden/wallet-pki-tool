@@ -110,8 +110,9 @@ class WalletPkiCliComponentTest {
     assertThat(run(cli, file, "authorities init wallet-attestation-issuer")).isZero();
 
     assertThat(snapshot(directory.resolve("state"))).containsAllEntriesOf(before);
-    try (var paths = Files.list(directory.resolve("state/ca"))) {
-      assertThat(paths.map(path -> path.getFileName().toString()).toList())
+    Path caDirectory = directory.resolve("state/ca");
+    try (var paths = Files.list(caDirectory)) {
+      assertThat(paths.map(caDirectory::relativize).map(Path::toString).toList())
           .containsExactlyInAnyOrder("pid-issuer", "wallet-attestation-issuer");
     }
   }
@@ -173,8 +174,9 @@ class WalletPkiCliComponentTest {
   @Test
   void incomplete_authorities_fail_before_other_selected_roots_are_created() throws Exception {
     Path file = configuration();
-    Path incomplete = directory.resolve("state/ca/wallet-attestation-issuer/ca.pem");
-    Files.createDirectories(incomplete.getParent());
+    Path authorityDirectory = directory.resolve("state/ca/wallet-attestation-issuer");
+    Files.createDirectories(authorityDirectory);
+    Path incomplete = authorityDirectory.resolve("ca.pem");
     Files.writeString(incomplete, "incomplete authority");
 
     assertThat(

@@ -45,18 +45,9 @@ public class EcKeyGenerator {
 
   private final SecureRandom secureRandom;
 
-  /** Default constructor using standard SecureRandom. */
+  /** Default constructor with an independent SecureRandom instance. */
   public EcKeyGenerator() {
-    this(new SecureRandom());
-  }
-
-  /**
-   * Constructor with explicit SecureRandom.
-   *
-   * @param secureRandom the secure random instance
-   */
-  public EcKeyGenerator(SecureRandom secureRandom) {
-    this.secureRandom = secureRandom;
+    this.secureRandom = new SecureRandom();
   }
 
   /**

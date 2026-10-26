@@ -48,6 +48,16 @@ class EcKeyGeneratorTest {
   }
 
   @Test
+  void successive_generations_produce_distinct_key_pairs() {
+    KeyPair first = keyGenerator.generateKeyPair();
+
+    KeyPair second = keyGenerator.generateKeyPair();
+
+    assertThat(second.getPublic().getEncoded()).isNotEqualTo(first.getPublic().getEncoded());
+    assertThat(second.getPrivate().getEncoded()).isNotEqualTo(first.getPrivate().getEncoded());
+  }
+
+  @Test
   void shouldConvertKeyToPemAndParseBack(@TempDir Path tempDir) throws IOException {
     // 1. Generate key pair and save private key as PEM file
     KeyPair keyPair = keyGenerator.generateKeyPair();

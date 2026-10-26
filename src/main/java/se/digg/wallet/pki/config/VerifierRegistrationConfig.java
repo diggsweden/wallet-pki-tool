@@ -24,7 +24,8 @@ public record VerifierRegistrationConfig(String jwtFile, String environmentFile,
     purpose = List.copyOf(Checks.required(purpose, "registration.purpose"));
     if (description.isEmpty() || purpose.isEmpty())
       throw new IllegalArgumentException("Registration description and purpose must not be empty");
-    requestedPidClaims = Checks.texts(requestedPidClaims, "registration.requestedPidClaims");
+    requestedPidClaims =
+        List.copyOf(Checks.texts(requestedPidClaims, "registration.requestedPidClaims"));
     for (String claim : requestedPidClaims) {
       if (!claim.matches("[a-z_]+(\\.[a-z_]+)*"))
         throw new IllegalArgumentException("Invalid PID claim path: " + claim);

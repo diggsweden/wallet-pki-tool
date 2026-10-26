@@ -29,7 +29,7 @@ public record PkiConfiguration(int schemaVersion, String stateDirectory, String 
       throw new IllegalArgumentException(
           "Configure CA distribution settings in caDistribution or trustSource, not both");
     }
-    Checks.required(caDistribution, "caDistribution");
+    caDistribution = Checks.required(caDistribution, "caDistribution");
     Path state = Path.of(stateDirectory).toAbsolutePath().normalize();
     Path publicDirectory =
         Path.of(outputDirectory).resolve(caDistribution.directory()).toAbsolutePath()

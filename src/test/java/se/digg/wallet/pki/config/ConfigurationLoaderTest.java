@@ -172,6 +172,16 @@ class ConfigurationLoaderTest {
   }
 
   @Test
+  void missing_ca_distribution_without_legacy_settings_is_rejected() throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    document.remove("caDistribution");
+    document.remove("trustSource");
+
+    assertInvalid(yaml.writeValueAsString(document), "caDistribution is required");
+  }
+
+  @Test
   void mixed_ca_distribution_locations_are_rejected() throws Exception {
     var yaml = YAMLMapper.builder().build();
     var document = yaml.readTree(EcosystemFixture.yaml(directory));

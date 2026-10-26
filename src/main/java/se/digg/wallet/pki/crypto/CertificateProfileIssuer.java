@@ -55,7 +55,7 @@ import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 /**
  * Issues service certificates according to the configured profiles for the wallet ecosystem.
  */
-public class CertificateProfileIssuer {
+public final class CertificateProfileIssuer {
 
   public static final String SIGNATURE_ALGORITHM = "SHA256withECDSA";
   public static final Duration DEFAULT_CERT_VALIDITY = Duration.ofDays(825);

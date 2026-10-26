@@ -125,10 +125,11 @@ class WalletServicesPkiGeneratorTest {
               .resolve(role.directory()).resolve("revocation-list.pem")))
           .isTrue();
     }
-    try (var files =
-        Files.walk(directory.resolve("config/trust-source"))) {
+    Path trustSourceDirectory = directory.resolve("config/trust-source");
+    try (var files = Files.walk(trustSourceDirectory)) {
       assertThat(
-          files.filter(Files::isRegularFile).map(path -> path.getFileName().toString()).toList())
+          files.filter(Files::isRegularFile).map(trustSourceDirectory::relativize)
+              .map(Path::toString).toList())
           .noneMatch(name -> name.contains("private") || name.endsWith(".p12"));
     }
   }
