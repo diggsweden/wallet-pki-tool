@@ -119,8 +119,8 @@ public class KeystoreManager {
   }
 
   /**
-   * Saves the KeyStore atomically with owner-only permissions on POSIX filesystems, creating
-   * parent directories if needed.
+   * Saves the KeyStore atomically with owner-only permissions on POSIX filesystems, creating parent
+   * directories if needed.
    *
    * @param keyStore the KeyStore to save
    * @param outputPath path to the destination .p12 file
