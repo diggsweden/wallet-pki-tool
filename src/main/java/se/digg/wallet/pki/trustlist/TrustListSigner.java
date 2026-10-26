@@ -37,7 +37,6 @@ import se.digg.wallet.pki.crypto.PkiCryptoException;
 public class TrustListSigner {
 
   public static final String TYPE_TRUSTLIST_JWT = "trustlist+jwt";
-  public static final String TYPE_STATUSLIST_JWT = "statuslist+jwt";
 
   /**
    * Signs a JSON payload as a compact JWS with ES256, embedded X.509 certificate chain, and default
@@ -105,19 +104,6 @@ public class TrustListSigner {
     } catch (CertificateEncodingException | JOSEException e) {
       throw new PkiCryptoException("Failed to create and sign JWS token", e);
     }
-  }
-
-  /**
-   * Signs a Status List payload as a compact JWT with typ: statuslist+jwt, ES256, and x5c header.
-   *
-   * @param jsonPayload the status list JSON payload
-   * @param privateKey the private key for ES256 signing
-   * @param signingCert the X.509 certificate to embed in the x5c header
-   * @return compact JWT string
-   */
-  public String signStatusListJwt(
-      String jsonPayload, PrivateKey privateKey, X509Certificate signingCert) {
-    return signJws(jsonPayload, privateKey, signingCert, TYPE_STATUSLIST_JWT);
   }
 
   /**

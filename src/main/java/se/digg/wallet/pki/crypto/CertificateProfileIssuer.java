@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
-import java.util.regex.Pattern;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERSequence;
@@ -50,7 +49,8 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import se.digg.wallet.pki.config.CertificateConfig;
+import se.digg.wallet.pki.domain.CertificateSubject;
+import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 /**
  * Issues service certificates according to the configured profiles for the wallet ecosystem.
@@ -73,13 +73,20 @@ public class CertificateProfileIssuer {
       new ASN1ObjectIdentifier("0.4.0.1862.1.6.2");
 
   private final SecureRandom secureRandom;
+  private final String caDistributionBaseUrl;
 
   public CertificateProfileIssuer() {
-    this(new SecureRandom());
+    this(new SecureRandom(), "http://trust-source");
   }
 
   public CertificateProfileIssuer(SecureRandom secureRandom) {
+    this(secureRandom, "http://trust-source");
+  }
+
+  public CertificateProfileIssuer(SecureRandom secureRandom, String caDistributionBaseUrl) {
     this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom must not be null");
+    this.caDistributionBaseUrl = se.digg.wallet.pki.domain.Checks
+        .httpUrl(caDistributionBaseUrl, "caDistributionBaseUrl").replaceAll("/+$", "");
   }
 
   /**
@@ -90,52 +97,23 @@ public class CertificateProfileIssuer {
     void apply(X509v3CertificateBuilder builder) throws IOException;
   }
 
-  /**
-   * Issues a certificate based on the requested profile type.
-   */
-  public X509Certificate issueCertificate(
-      CertificateConfig certConfig, PublicKey subjectPublicKey, CertificateAuthority signingCa) {
-    Objects.requireNonNull(certConfig, "certConfig must not be null");
-    Objects.requireNonNull(subjectPublicKey, "subjectPublicKey must not be null");
-    Objects.requireNonNull(signingCa, "signingCa must not be null");
+  public X509Certificate issuePidSigningCertificate(CertificateSubject subject, PublicKey publicKey,
+      CertificateAuthority authority) {
+    return issueEudiServiceCertificate(subject, publicKey, authority, OID_QC_TYPE_PID);
+  }
 
-    CertificateProfileType profileType = CertificateProfileType.fromString(certConfig.type());
-    String commonName =
-        certConfig.tradeName() != null && !certConfig.tradeName().isBlank()
-            ? certConfig.tradeName()
-            : certConfig.id();
-
-    return switch (profileType) {
-      case RELYING_PARTY_ACCESS -> issueRelyingPartyAccessCertificate(
-          certConfig, commonName, subjectPublicKey, signingCa);
-      case RELYING_PARTY_REGISTRATION -> issueRelyingPartyRegistrationCertificate(
-          certConfig, commonName, subjectPublicKey, signingCa);
-      case PID_ISSUER_SERVICE, WALLET_PROVIDER_SERVICE -> issueEudiServiceCertificate(
-          certConfig, commonName, subjectPublicKey, signingCa);
-      case TRUST_SOURCE_SIGNER -> issueTrustSourceSignerCertificate(
-          certConfig, commonName, subjectPublicKey, signingCa);
-      case ENCRYPTION -> issueEncryptionCertificate(
-          commonName, certConfig.sans(), certConfig.country(), subjectPublicKey, signingCa);
-      case GENERIC_SERVICE -> issueGenericServiceCertificate(
-          certConfig, commonName, subjectPublicKey, signingCa);
-    };
+  public X509Certificate issueWalletSigningCertificate(CertificateSubject subject,
+      PublicKey publicKey,
+      CertificateAuthority authority) {
+    return issueEudiServiceCertificate(subject, publicKey, authority, OID_QC_TYPE_WAL);
   }
 
   public X509Certificate issueRelyingPartyAccessCertificate(
-      CertificateConfig certConfig,
-      String commonName,
+      CertificateSubject certificateSubject,
       PublicKey subjectPublicKey,
       CertificateAuthority signingCa) {
-    if (certConfig.organizationIdentifier() == null
-        || certConfig.organizationIdentifier().isBlank()) {
-      throw new PkiCryptoException(
-          ("Certificate '%s' of type 'relying-party-access' requires a non-blank"
-              + " 'organizationIdentifier' according to ETSI TS 119 411-8")
-              .formatted(certConfig.id()));
-    }
-
     X500Name subject =
-        buildSubjectDn(commonName, certConfig.country(), certConfig.organizationIdentifier());
+        buildSubjectDn(certificateSubject);
     String caName = signingCa.id();
 
     return issueCertificateInternal(
@@ -147,11 +125,11 @@ public class CertificateProfileIssuer {
           builder.addExtension(
               Extension.keyUsage, true,
               new KeyUsage(KeyUsage.digitalSignature | KeyUsage.nonRepudiation));
-          addSubjectAlternativeNames(builder, certConfig.sans());
+          addSubjectAlternativeNames(builder, certificateSubject.subjectAlternativeNames());
           addAiaAndCrlDistributionPoints(builder, caName);
 
           PolicyQualifierInfo cps =
-              new PolicyQualifierInfo("http://trust-source/%s/cps.md".formatted(caName));
+              new PolicyQualifierInfo(caDistributionBaseUrl + "/" + caName + "/cps.md");
           PolicyInformation policyInfo =
               new PolicyInformation(OID_POLICY_WRPAC, new DERSequence(cps));
           builder.addExtension(
@@ -160,20 +138,11 @@ public class CertificateProfileIssuer {
   }
 
   public X509Certificate issueRelyingPartyRegistrationCertificate(
-      CertificateConfig certConfig,
-      String commonName,
+      CertificateSubject certificateSubject,
       PublicKey subjectPublicKey,
       CertificateAuthority signingCa) {
-    if (certConfig.organizationIdentifier() == null
-        || certConfig.organizationIdentifier().isBlank()) {
-      throw new PkiCryptoException(
-          ("Certificate '%s' of type 'relying-party-registration' requires a non-blank"
-              + " 'organizationIdentifier'")
-              .formatted(certConfig.id()));
-    }
-
     X500Name subject =
-        buildSubjectDn(commonName, certConfig.country(), certConfig.organizationIdentifier());
+        buildSubjectDn(certificateSubject);
     String caName = signingCa.id();
 
     return issueCertificateInternal(
@@ -185,18 +154,17 @@ public class CertificateProfileIssuer {
           builder.addExtension(
               Extension.keyUsage, true,
               new KeyUsage(KeyUsage.digitalSignature));
-          addSubjectAlternativeNames(builder, certConfig.sans());
+          addSubjectAlternativeNames(builder, certificateSubject.subjectAlternativeNames());
           addAiaAndCrlDistributionPoints(builder, caName);
         });
   }
 
-  public X509Certificate issueEudiServiceCertificate(
-      CertificateConfig certConfig,
-      String commonName,
+  private X509Certificate issueEudiServiceCertificate(
+      CertificateSubject certificateSubject,
       PublicKey subjectPublicKey,
-      CertificateAuthority signingCa) {
+      CertificateAuthority signingCa, ASN1ObjectIdentifier qcType) {
     X500Name subject =
-        buildSubjectDn(commonName, certConfig.country(), certConfig.organizationIdentifier());
+        buildSubjectDn(certificateSubject);
     String caName = signingCa.id();
 
     return issueCertificateInternal(
@@ -214,7 +182,7 @@ public class CertificateProfileIssuer {
               new ExtendedKeyUsage(
                   new KeyPurposeId[] {KeyPurposeId.id_kp_serverAuth,
                       KeyPurposeId.id_kp_clientAuth}));
-          addSubjectAlternativeNames(builder, certConfig.sans());
+          addSubjectAlternativeNames(builder, certificateSubject.subjectAlternativeNames());
           addAiaAndCrlDistributionPoints(builder, caName);
           builder.addExtension(
               Extension.certificatePolicies,
@@ -223,24 +191,17 @@ public class CertificateProfileIssuer {
 
           ASN1EncodableVector qcVector = new ASN1EncodableVector();
           qcVector.add(new QCStatement(ETSIQCObjectIdentifiers.id_etsi_qcs_QcCompliance));
-          qcVector.add(
-              new QCStatement(
-                  ETSIQCObjectIdentifiers.id_etsi_qcs_QcType,
-                  new DERSequence(new ASN1ObjectIdentifier[] {OID_QC_TYPE_PID})));
-          qcVector.add(
-              new QCStatement(
-                  ETSIQCObjectIdentifiers.id_etsi_qcs_QcType,
-                  new DERSequence(new ASN1ObjectIdentifier[] {OID_QC_TYPE_WAL})));
+          qcVector.add(new QCStatement(ETSIQCObjectIdentifiers.id_etsi_qcs_QcType,
+              new DERSequence(qcType)));
           builder.addExtension(Extension.qCStatements, false, new DERSequence(qcVector));
         });
   }
 
   public X509Certificate issueTrustSourceSignerCertificate(
-      CertificateConfig certConfig,
-      String commonName,
+      CertificateSubject certificateSubject,
       PublicKey subjectPublicKey,
       CertificateAuthority signingCa) {
-    X500Name subject = buildSubjectDn(commonName, certConfig.country(), null);
+    X500Name subject = buildSubjectDn(certificateSubject);
 
     return issueCertificateInternal(
         subject,
@@ -251,7 +212,7 @@ public class CertificateProfileIssuer {
           builder.addExtension(
               Extension.keyUsage, true,
               new KeyUsage(KeyUsage.digitalSignature | KeyUsage.nonRepudiation));
-          addSubjectAlternativeNames(builder, certConfig.sans());
+          addSubjectAlternativeNames(builder, certificateSubject.subjectAlternativeNames());
           addCrlDistributionPoint(builder, signingCa.id());
 
           ASN1EncodableVector qcVector = new ASN1EncodableVector();
@@ -265,12 +226,10 @@ public class CertificateProfileIssuer {
   }
 
   public X509Certificate issueEncryptionCertificate(
-      String commonName,
-      List<String> sans,
-      String country,
+      CertificateSubject certificateSubject,
       PublicKey subjectPublicKey,
       CertificateAuthority signingCa) {
-    X500Name subject = buildSubjectDn(commonName, country, null);
+    X500Name subject = buildSubjectDn(certificateSubject);
 
     return issueCertificateInternal(
         subject,
@@ -289,35 +248,8 @@ public class CertificateProfileIssuer {
               new ExtendedKeyUsage(
                   new KeyPurposeId[] {KeyPurposeId.id_kp_serverAuth,
                       KeyPurposeId.id_kp_clientAuth}));
-          addSubjectAlternativeNames(builder, sans);
+          addSubjectAlternativeNames(builder, certificateSubject.subjectAlternativeNames());
           addCrlDistributionPoint(builder, signingCa.id());
-        });
-  }
-
-  public X509Certificate issueGenericServiceCertificate(
-      CertificateConfig certConfig,
-      String commonName,
-      PublicKey subjectPublicKey,
-      CertificateAuthority signingCa) {
-    X500Name subject = buildSubjectDn(commonName, certConfig.country(), null);
-
-    return issueCertificateInternal(
-        subject,
-        subjectPublicKey,
-        signingCa,
-        DEFAULT_CERT_VALIDITY,
-        builder -> {
-          builder.addExtension(
-              Extension.keyUsage, true,
-              new KeyUsage(KeyUsage.digitalSignature | KeyUsage.nonRepudiation));
-          builder.addExtension(
-              Extension.extendedKeyUsage,
-              false,
-              new ExtendedKeyUsage(
-                  new KeyPurposeId[] {KeyPurposeId.id_kp_serverAuth,
-                      KeyPurposeId.id_kp_clientAuth}));
-          addSubjectAlternativeNames(builder, certConfig.sans());
-          addAiaAndCrlDistributionPoints(builder, signingCa.id());
         });
   }
 
@@ -353,17 +285,13 @@ public class CertificateProfileIssuer {
     }
   }
 
-  private X500Name buildSubjectDn(String commonName, String country, String orgIdentifier) {
-    X500NameBuilder builder = new X500NameBuilder(BCStyle.INSTANCE);
-    builder.addRDN(BCStyle.CN, commonName);
-    builder.addRDN(BCStyle.O, "DIGG");
-    builder.addRDN(BCStyle.C, country != null && !country.isBlank() ? country : "SE");
-    if (orgIdentifier != null && !orgIdentifier.isBlank()) {
-      builder.addRDN(BCStyle.ORGANIZATION_IDENTIFIER, orgIdentifier);
-    } else if (orgIdentifier != null) {
-      builder.addRDN(BCStyle.ORGANIZATION_IDENTIFIER, "VATSE-12345678");
-    }
-    return builder.build();
+  private X500Name buildSubjectDn(CertificateSubject subject) {
+    return new X500NameBuilder(BCStyle.INSTANCE)
+        .addRDN(BCStyle.CN, subject.commonName())
+        .addRDN(BCStyle.O, subject.organization().name())
+        .addRDN(BCStyle.C, subject.organization().country())
+        .addRDN(BCStyle.ORGANIZATION_IDENTIFIER, subject.organization().identifier())
+        .build();
   }
 
   private X509v3CertificateBuilder createBaseBuilder(
@@ -382,64 +310,25 @@ public class CertificateProfileIssuer {
         issuer, serialNumber, notBefore, notAfter, subject, subjectPublicKey);
   }
 
-  private void addSubjectAlternativeNames(X509v3CertificateBuilder builder, List<String> sans)
+  private void addSubjectAlternativeNames(X509v3CertificateBuilder builder,
+      SubjectAlternativeNames sans)
       throws IOException {
-    if (sans == null || sans.isEmpty()) {
-      return;
-    }
-
     List<GeneralName> names = new ArrayList<>();
-    for (String san : sans) {
-      names.add(parseGeneralName(san));
+    sans.dns().forEach(value -> names.add(new GeneralName(GeneralName.dNSName, value)));
+    sans.ip().forEach(value -> names.add(new GeneralName(GeneralName.iPAddress, value)));
+    sans.uri()
+        .forEach(value -> names.add(new GeneralName(GeneralName.uniformResourceIdentifier, value)));
+    if (!names.isEmpty()) {
+      builder.addExtension(Extension.subjectAlternativeName, false,
+          new GeneralNames(names.toArray(GeneralName[]::new)));
     }
-    builder.addExtension(
-        Extension.subjectAlternativeName,
-        false,
-        new GeneralNames(names.toArray(new GeneralName[0])));
-  }
-
-  private static final Pattern IPV4_PATTERN =
-      Pattern.compile("^((25[0-5]|(2[0-4]|1\\d|[1-9]|)\\d)\\.?\\b){4}$");
-  private static final Pattern IPV6_PATTERN =
-      Pattern.compile(
-          "^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::$|^::1$|"
-              + "^([0-9a-fA-F]{1,4}:)+[0-9a-fA-F]{1,4}$");
-
-  /**
-   * Parses a Subject Alternative Name (SAN) string and auto-detects URI, IP address, or DNS name if
-   * explicit prefixes (such as "DNS:", "IP:", "URI:") are omitted.
-   */
-  private GeneralName parseGeneralName(String san) {
-    String trimmed = san.trim();
-    if (trimmed.regionMatches(true, 0, "DNS:", 0, 4)) {
-      return new GeneralName(GeneralName.dNSName, trimmed.substring(4).trim());
-    }
-    if (trimmed.regionMatches(true, 0, "IP:", 0, 3)) {
-      String ip = trimmed.substring(3).trim();
-      if (!IPV4_PATTERN.matcher(ip).matches() && !IPV6_PATTERN.matcher(ip).matches()) {
-        throw new PkiCryptoException("Invalid IP address in SAN: " + ip);
-      }
-      return new GeneralName(GeneralName.iPAddress, ip);
-    }
-    if (trimmed.regionMatches(true, 0, "URI:", 0, 4)) {
-      return new GeneralName(GeneralName.uniformResourceIdentifier, trimmed.substring(4).trim());
-    }
-    if (trimmed.regionMatches(true, 0, "http://", 0, 7)
-        || trimmed.regionMatches(true, 0, "https://", 0, 8)
-        || trimmed.contains("://")) {
-      return new GeneralName(GeneralName.uniformResourceIdentifier, trimmed);
-    }
-    if (IPV4_PATTERN.matcher(trimmed).matches() || IPV6_PATTERN.matcher(trimmed).matches()) {
-      return new GeneralName(GeneralName.iPAddress, trimmed);
-    }
-    return new GeneralName(GeneralName.dNSName, trimmed);
   }
 
   private void addAiaAndCrlDistributionPoints(X509v3CertificateBuilder builder, String caName)
       throws IOException {
     addCrlDistributionPoint(builder, caName);
 
-    String aiaUrl = "http://trust-source/%s/ca.pem".formatted(caName);
+    String aiaUrl = caDistributionBaseUrl + "/" + caName + "/ca.pem";
     AccessDescription caIssuers =
         new AccessDescription(
             AccessDescription.id_ad_caIssuers,
@@ -450,7 +339,7 @@ public class CertificateProfileIssuer {
 
   private void addCrlDistributionPoint(X509v3CertificateBuilder builder, String caName)
       throws IOException {
-    String crlUrl = "http://trust-source/%s/revocation-list.pem".formatted(caName);
+    String crlUrl = caDistributionBaseUrl + "/" + caName + "/revocation-list.pem";
     GeneralName crlName = new GeneralName(GeneralName.uniformResourceIdentifier, crlUrl);
     DistributionPointName dpn =
         new DistributionPointName(DistributionPointName.FULL_NAME, new GeneralNames(crlName));

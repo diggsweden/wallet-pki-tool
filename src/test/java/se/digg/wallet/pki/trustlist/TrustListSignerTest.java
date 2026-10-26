@@ -64,25 +64,6 @@ class TrustListSignerTest {
   }
 
   @Test
-  void shouldSignStatusListJwtWithStatuslistJwtType() throws Exception {
-    CertificateAuthority trustSourceCa =
-        caManager.createAuthority("trust-source-ca", "DIGG Wallet Trust Source CA");
-
-    String samplePayload = "{\"iss\":\"http://example.se\",\"status_list\":{}}";
-
-    String compactJwt =
-        signer.signStatusListJwt(
-            samplePayload,
-            trustSourceCa.privateKey(),
-            trustSourceCa.certificate());
-
-    JWSObject parsed = JWSObject.parse(compactJwt);
-    assertThat(parsed.getHeader().getType()).isNotNull();
-    assertThat(parsed.getHeader().getType().toString()).isEqualTo("statuslist+jwt");
-    assertThat(signer.verifyJws(compactJwt, trustSourceCa.publicKey())).isTrue();
-  }
-
-  @Test
   void shouldRejectTamperedSignature() {
     // 1. Setup two different CAs
     CertificateAuthority ca1 = caManager.createAuthority("ca-1", "CA One");
