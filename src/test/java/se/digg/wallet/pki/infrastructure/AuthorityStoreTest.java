@@ -38,7 +38,7 @@ class AuthorityStoreTest {
     var authority = new AuthorityStore(config).initialize(role);
     assertThat(authority.certificate().getSubjectX500Principal().getName())
         .contains("CN=" + commonName, "O=DIGG", "C=SE");
-    Path state = directory.resolve("state/authorities").resolve(roleDirectory);
+    Path state = directory.resolve("state/ca").resolve(roleDirectory);
     Path caDistribution = directory.resolve("config/trust-source").resolve(roleDirectory);
     assertThat(Files.isRegularFile(state.resolve("ca_private_key.pem"))).isTrue();
     for (String name : java.util.List.of("ca.pem", "revocation-list.pem")) {
@@ -83,7 +83,7 @@ class AuthorityStoreTest {
         Files.readAllBytes(directory.resolve("config/trust-source")
             .resolve(AuthorityRole.PID_ISSUER.directory()).resolve("ca.pem")))
         .isEqualTo(
-            Files.readAllBytes(directory.resolve("state/authorities")
+            Files.readAllBytes(directory.resolve("state/ca")
                 .resolve(AuthorityRole.PID_ISSUER.directory()).resolve("ca.pem")));
   }
 
@@ -92,11 +92,11 @@ class AuthorityStoreTest {
     var config = EcosystemFixture.configuration(directory);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
-    Path key = directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+    Path key = directory.resolve("state/ca").resolve(AuthorityRole.PID_ISSUER.directory())
         .resolve("ca_private_key.pem");
     byte[] keyBefore = Files.readAllBytes(key);
     Files
-        .delete(directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+        .delete(directory.resolve("state/ca").resolve(AuthorityRole.PID_ISSUER.directory())
             .resolve("ca.pem"));
     assertThatThrownBy(() -> store.initialize(AuthorityRole.PID_ISSUER))
         .hasMessageContaining("incomplete roots must be repaired");
@@ -111,7 +111,7 @@ class AuthorityStoreTest {
     var original = manager.createAuthority("pid-issuer", "DIGG Wallet PID Issuer CA",
         config.organization());
     Path state =
-        directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory());
+        directory.resolve("state/ca").resolve(AuthorityRole.PID_ISSUER.directory());
     manager.saveAuthority(original, state);
     var store = new AuthorityStore(config);
     byte[] crlBefore = Files.readAllBytes(state.resolve("revocation-list.pem"));
@@ -132,7 +132,7 @@ class AuthorityStoreTest {
     var config = EcosystemFixture.configuration(directory);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
-    Path key = directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+    Path key = directory.resolve("state/ca").resolve(AuthorityRole.PID_ISSUER.directory())
         .resolve("ca_private_key.pem");
     new EcKeyGenerator().writePrivateKeyPem(new EcKeyGenerator().generateKeyPair().getPrivate(),
         key);
@@ -148,7 +148,7 @@ class AuthorityStoreTest {
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
     Files
-        .delete(directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+        .delete(directory.resolve("state/ca").resolve(AuthorityRole.PID_ISSUER.directory())
             .resolve("revocation-list.pem"));
     assertThatThrownBy(() -> store.initialize(AuthorityRole.PID_ISSUER))
         .hasMessageContaining("revocation-list.pem");
@@ -161,10 +161,10 @@ class AuthorityStoreTest {
     store.initialize(AuthorityRole.PID_ISSUER);
     store.initialize(AuthorityRole.WALLET_ATTESTATION_ISSUER);
     Files.copy(
-        directory.resolve("state/authorities")
+        directory.resolve("state/ca")
             .resolve(AuthorityRole.WALLET_ATTESTATION_ISSUER.directory())
             .resolve("revocation-list.pem"),
-        directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
+        directory.resolve("state/ca").resolve(AuthorityRole.PID_ISSUER.directory())
             .resolve("revocation-list.pem"),
         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     assertThatThrownBy(() -> store.load(AuthorityRole.PID_ISSUER))

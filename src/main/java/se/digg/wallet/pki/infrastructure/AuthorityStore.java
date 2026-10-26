@@ -29,7 +29,7 @@ public final class AuthorityStore {
 
   public AuthorityStore(PkiConfiguration config) {
     this.config = config;
-    this.authorityDirectory = Path.of(config.stateDirectory()).resolve("authorities");
+    this.authorityDirectory = Path.of(config.stateDirectory()).resolve("ca");
     this.caDistributionDirectory = Path.of(config.outputDirectory())
         .resolve(config.caDistribution().directory());
   }

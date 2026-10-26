@@ -94,7 +94,7 @@ class WalletPkiCliComponentTest {
     assertThat(run(cli(name -> null), file, "authorities init")).isZero();
 
     for (var role : AuthorityRole.values()) {
-      assertThat(directory.resolve("state/authorities").resolve(role.directory()).resolve("ca.pem"))
+      assertThat(directory.resolve("state/ca").resolve(role.directory()).resolve("ca.pem"))
           .isRegularFile();
     }
     assertThat(err.toString()).isEmpty();
@@ -110,7 +110,7 @@ class WalletPkiCliComponentTest {
     assertThat(run(cli, file, "authorities init wallet-attestation-issuer")).isZero();
 
     assertThat(snapshot(directory.resolve("state"))).containsAllEntriesOf(before);
-    try (var paths = Files.list(directory.resolve("state/authorities"))) {
+    try (var paths = Files.list(directory.resolve("state/ca"))) {
       assertThat(paths.map(path -> path.getFileName().toString()).toList())
           .containsExactlyInAnyOrder("pid-issuer", "wallet-attestation-issuer");
     }
@@ -126,9 +126,9 @@ class WalletPkiCliComponentTest {
 
     assertThat(run(cli(name -> null), file, "authorities init wallet-attestation-issuer")).isZero();
 
-    assertThat(directory.resolve("state/authorities/wallet-attestation-issuer/ca.pem"))
+    assertThat(directory.resolve("state/ca/wallet-attestation-issuer/ca.pem"))
         .isRegularFile();
-    assertThat(directory.resolve("state/authorities/pid-issuer")).doesNotExist();
+    assertThat(directory.resolve("state/ca/pid-issuer")).doesNotExist();
     assertThat(err.toString()).isEmpty();
   }
 
@@ -173,7 +173,7 @@ class WalletPkiCliComponentTest {
   @Test
   void incomplete_authorities_fail_before_other_selected_roots_are_created() throws Exception {
     Path file = configuration();
-    Path incomplete = directory.resolve("state/authorities/wallet-attestation-issuer/ca.pem");
+    Path incomplete = directory.resolve("state/ca/wallet-attestation-issuer/ca.pem");
     Files.createDirectories(incomplete.getParent());
     Files.writeString(incomplete, "incomplete authority");
 
@@ -181,7 +181,7 @@ class WalletPkiCliComponentTest {
         run(cli(name -> null), file, "authorities init pid-issuer wallet-attestation-issuer"))
         .isEqualTo(1);
 
-    assertThat(directory.resolve("state/authorities/pid-issuer")).doesNotExist();
+    assertThat(directory.resolve("state/ca/pid-issuer")).doesNotExist();
     assertThat(directory.resolve("config")).doesNotExist();
     assertThat(Files.readString(incomplete)).isEqualTo("incomplete authority");
   }
@@ -212,7 +212,7 @@ class WalletPkiCliComponentTest {
     assertThat(store.getCertificateChain(alias)).hasSize(2);
     assertThat(out.toString()).contains("new keys", "selected files replaced");
     assertThat(err.toString()).isEmpty();
-    try (var paths = Files.list(directory.resolve("state/authorities"))) {
+    try (var paths = Files.list(directory.resolve("state/ca"))) {
       assertThat(paths.toList()).hasSize(1);
     }
   }
@@ -367,7 +367,7 @@ class WalletPkiCliComponentTest {
     assertThat(loteEntries().size()).isEqualTo(5);
     assertThat(pidEntries).hasSize(2);
     var local = new CertificateAuthorityManager()
-        .readCertificatePem(directory.resolve("state/authorities/pid-issuer/ca.pem"));
+        .readCertificatePem(directory.resolve("state/ca/pid-issuer/ca.pem"));
     assertThat(Base64.getDecoder().decode(pidEntries.get(0)
         .at("/TrustedEntityServices/0/ServiceInformation/ServiceDigitalIdentity/X509Certificates/0/val")
         .asString())).isEqualTo(local.getEncoded());
@@ -396,7 +396,7 @@ class WalletPkiCliComponentTest {
     for (var role : AuthorityRole.values()) {
       if (role != AuthorityRole.TRUST_SOURCE)
         Files.delete(
-            directory.resolve("state/authorities").resolve(role.directory()).resolve("ca.pem"));
+            directory.resolve("state/ca").resolve(role.directory()).resolve("ca.pem"));
     }
 
     assertThat(run(cli(name -> "test-password"), file, "trust-source lote generate")).isZero();
@@ -532,7 +532,7 @@ class WalletPkiCliComponentTest {
   @Test
   void missing_bulk_authorities_preserve_all_existing_outputs() throws Exception {
     Path file = initializedEcosystem();
-    Files.delete(directory.resolve("state/authorities/trust-source/ca_private_key.pem"));
+    Files.delete(directory.resolve("state/ca/trust-source/ca_private_key.pem"));
     var before = snapshot(directory.resolve("config"));
 
     assertThat(run(cli(name -> "test-password"), file, "ecosystem generate")).isEqualTo(1);
@@ -629,7 +629,7 @@ class WalletPkiCliComponentTest {
   private void deleteAuthorityPrivateKeys(boolean includeSigner) throws Exception {
     for (var role : AuthorityRole.values()) {
       if (includeSigner || role != AuthorityRole.TRUST_SOURCE) {
-        Files.delete(directory.resolve("state/authorities").resolve(role.directory())
+        Files.delete(directory.resolve("state/ca").resolve(role.directory())
             .resolve("ca_private_key.pem"));
       }
     }
