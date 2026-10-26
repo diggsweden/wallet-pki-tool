@@ -23,17 +23,25 @@ permissions:
 
 jobs:
   release:
-    uses: diggsweden/reusable-ci/.github/workflows/release-orchestrator.yml@617cb32268cb6aefdfa4117b4159d37e3b47d7b3 # v2.8.3
+    uses: diggsweden/reusable-ci/.github/workflows/release-orchestrator.yml@1a76b0c1a69952742ea663c8cfe77d8fe1d168ad # v3.1.0
     permissions:
       contents: write # Create GitHub releases and tags
-      packages: write # Publish JARs to GitHub Packages and images to ghcr.io
+      pull-requests: read # Changelog generation reads merged PRs (required by v3)
+      packages: write # Push container images to ghcr.io
       id-token: write # Generate OIDC token for SLSA provenance attestation
       actions: read # Read workflow runs for SLSA provenance generation
       security-events: write # Upload vulnerability scan results from container scanning
       attestations: write # Attach SBOM attestation to container images
-    secrets: inherit # Use org-level GPG keys, Maven credentials if configured
+    # v3 requires explicit secret mappings with the canonical names.
+    # The org secrets were renamed from OSPO_BOT_* / RELEASE_BOT_TOKEN / SARIF_UPLOAD_TOKEN.
+    secrets:
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+      RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+      RELEASE_GPG_PUBLIC_KEY: ${{ secrets.RELEASE_GPG_PUBLIC_KEY }}
+      CODE_SCANNING_TOKEN: ${{ secrets.CODE_SCANNING_TOKEN }} # Optional Code Scanning upload
     with:
-      reusable-ci-ref: d31c989acd139c3e8754e116496c826af8dbbca0
+      reusable-ci-ref: 1a76b0c1a69952742ea663c8cfe77d8fe1d168ad
       artifacts-config: .github/artifacts.yml
       changelog-creator: git-cliff
       release-publisher: github-cli

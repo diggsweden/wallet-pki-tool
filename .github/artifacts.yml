@@ -20,7 +20,3 @@ containers:
     context: .
     platforms: linux/amd64,linux/arm64
     registry: ghcr.io
-
-publishers:
-  - type: github-packages
-    artifacts: [wallet-pki-tool]
