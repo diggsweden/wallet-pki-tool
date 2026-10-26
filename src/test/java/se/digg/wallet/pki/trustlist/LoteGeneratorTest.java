@@ -33,8 +33,9 @@ class LoteGeneratorTest {
     var generator = new LoteGenerator();
     String json =
         generator.buildLoteDocument(List.of(
-            new LoteAuthority(AuthorityRole.WALLET_PROVIDER, wallet,
-                config.trustSource().lote().trustedAuthorities().walletProvider().getFirst()),
+            new LoteAuthority(AuthorityRole.WALLET_ATTESTATION_ISSUER, wallet,
+                config.trustSource().lote().trustedAuthorities().walletAttestationIssuer()
+                    .getFirst()),
             new LoteAuthority(AuthorityRole.PID_ISSUER, pid,
                 config.trustSource().lote().trustedAuthorities().pidIssuer().getFirst()),
             new LoteAuthority(AuthorityRole.VERIFIER_ACCESS, access,

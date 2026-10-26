@@ -7,6 +7,8 @@ target/
 .github/
 .idea/
 .vscode/
+.wallet-pki/
+node_modules/
 *.md
 justfile
 LICENSES/

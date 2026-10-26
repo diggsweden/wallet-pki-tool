@@ -19,11 +19,12 @@ public record LoteConfig(String outputFile, String name, int sequenceNumber, int
     Checks.required(trustedAuthorities, "lote.trustedAuthorities");
   }
 
-  public record TrustedAuthorities(List<Entity> pidIssuer, List<Entity> walletProvider,
+  public record TrustedAuthorities(List<Entity> pidIssuer, List<Entity> walletAttestationIssuer,
       List<Entity> verifierAccess, List<Entity> verifierRegistration) {
     public TrustedAuthorities {
       pidIssuer = pidIssuer == null ? List.of() : List.copyOf(pidIssuer);
-      walletProvider = walletProvider == null ? List.of() : List.copyOf(walletProvider);
+      walletAttestationIssuer =
+          walletAttestationIssuer == null ? List.of() : List.copyOf(walletAttestationIssuer);
       verifierAccess = verifierAccess == null ? List.of() : List.copyOf(verifierAccess);
       verifierRegistration =
           verifierRegistration == null ? List.of() : List.copyOf(verifierRegistration);

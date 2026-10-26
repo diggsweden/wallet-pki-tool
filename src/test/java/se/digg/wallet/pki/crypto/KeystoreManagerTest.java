@@ -46,7 +46,8 @@ class KeystoreManagerTest {
       throws Exception {
     // 1. Setup CA, service key pair, and certificate
     CertificateAuthority ca =
-        caManager.createAuthority("wallet-provider-ca", "DIGG Wallet Provider CA");
+        caManager.createAuthority("wallet-attestation-issuer-ca",
+            "DIGG Wallet Attestation Issuer CA");
     KeyPair serviceKeyPair = keyGenerator.generateKeyPair();
 
 
@@ -54,12 +55,12 @@ class KeystoreManagerTest {
         issuer.issuePidSigningCertificate(subject("Service"), serviceKeyPair.getPublic(), ca);
 
     char[] password = "provider-secret-pass".toCharArray();
-    Path p12Path = tempDir.resolve("wallet-provider/wallet_provider.p12");
+    Path p12Path = tempDir.resolve("wallet-attestation-issuer/wallet_attestation_issuer.p12");
 
     // 2. Create and save PKCS#12 keystore
     KeyStore keyStore =
         keystoreManager.createSingleKeyStore(
-            "wallet_provider",
+            "wallet_attestation_issuer",
             serviceKeyPair.getPrivate(),
             serviceCert,
             ca.certificate(),
@@ -70,13 +71,13 @@ class KeystoreManagerTest {
     // 3. Load keystore from disk and verify entries
     KeyStore loadedStore = keystoreManager.loadKeyStore(p12Path, password);
     assertThat(loadedStore).isNotNull();
-    assertThat(loadedStore.containsAlias("wallet_provider")).isTrue();
-    assertThat(loadedStore.isKeyEntry("wallet_provider")).isTrue();
+    assertThat(loadedStore.containsAlias("wallet_attestation_issuer")).isTrue();
+    assertThat(loadedStore.isKeyEntry("wallet_attestation_issuer")).isTrue();
 
-    Key recoveredKey = loadedStore.getKey("wallet_provider", password);
+    Key recoveredKey = loadedStore.getKey("wallet_attestation_issuer", password);
     assertThat(recoveredKey.getEncoded()).isEqualTo(serviceKeyPair.getPrivate().getEncoded());
 
-    Certificate[] chain = loadedStore.getCertificateChain("wallet_provider");
+    Certificate[] chain = loadedStore.getCertificateChain("wallet_attestation_issuer");
     assertThat(chain).hasSize(2);
     assertThat(chain[0].getEncoded()).isEqualTo(serviceCert.getEncoded());
     assertThat(chain[1].getEncoded()).isEqualTo(ca.certificate().getEncoded());

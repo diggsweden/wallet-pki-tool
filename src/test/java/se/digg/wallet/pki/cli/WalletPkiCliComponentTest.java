@@ -53,15 +53,18 @@ class WalletPkiCliComponentTest {
   void root_help_lists_role_first_commands_without_reading_configuration() {
     assertThat(cli(name -> null).execute("--help")).isZero();
 
-    assertThat(out.toString()).contains("authorities", "pid-issuer", "wallet-provider", "verifier",
-        "trust-source", "ecosystem").doesNotContain("init-authorities");
+    assertThat(out.toString())
+        .contains("authorities", "pid-issuer", "wallet-attestation-issuer", "verifier",
+            "trust-source", "ecosystem")
+        .doesNotContain("init-authorities");
     assertThat(err.toString()).isEmpty();
     assertThat(directory).isEmptyDirectory();
   }
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"pid-issuer generate", "wallet-provider generate", "verifier access generate",
+      strings = {"pid-issuer generate", "wallet-attestation-issuer generate",
+          "verifier access generate",
           "verifier registration generate", "trust-source generate", "trust-source lote generate",
           "ecosystem generate", "authorities init"})
   void every_operation_explains_its_contract_without_requiring_configuration(String command) {
@@ -104,12 +107,12 @@ class WalletPkiCliComponentTest {
     assertThat(run(cli, file, "authorities init pid-issuer")).isZero();
     var before = snapshot(directory.resolve("state"));
 
-    assertThat(run(cli, file, "authorities init wallet-provider")).isZero();
+    assertThat(run(cli, file, "authorities init wallet-attestation-issuer")).isZero();
 
     assertThat(snapshot(directory.resolve("state"))).containsAllEntriesOf(before);
     try (var paths = Files.list(directory.resolve("state/authorities"))) {
       assertThat(paths.map(path -> path.getFileName().toString()).toList())
-          .containsExactlyInAnyOrder("pid-issuer", "wallet-provider");
+          .containsExactlyInAnyOrder("pid-issuer", "wallet-attestation-issuer");
     }
   }
 
@@ -117,13 +120,14 @@ class WalletPkiCliComponentTest {
   void selected_authorities_need_only_their_own_common_name() throws Exception {
     Path file = configuration();
     var config = (ObjectNode) yaml.readTree(Files.readString(file));
-    var authority = config.path("authorities").path("walletProvider").deepCopy();
-    config.putObject("authorities").set("walletProvider", authority);
+    var authority = config.path("authorities").path("walletAttestationIssuer").deepCopy();
+    config.putObject("authorities").set("walletAttestationIssuer", authority);
     Files.writeString(file, yaml.writeValueAsString(config));
 
-    assertThat(run(cli(name -> null), file, "authorities init wallet-provider")).isZero();
+    assertThat(run(cli(name -> null), file, "authorities init wallet-attestation-issuer")).isZero();
 
-    assertThat(directory.resolve("state/authorities/wallet-provider/ca.pem")).isRegularFile();
+    assertThat(directory.resolve("state/authorities/wallet-attestation-issuer/ca.pem"))
+        .isRegularFile();
     assertThat(directory.resolve("state/authorities/pid-issuer")).doesNotExist();
     assertThat(err.toString()).isEmpty();
   }
@@ -132,26 +136,28 @@ class WalletPkiCliComponentTest {
   void missing_selected_authority_settings_fail_before_any_authority_is_created() throws Exception {
     Path file = configuration();
     var config = (ObjectNode) yaml.readTree(Files.readString(file));
-    ((ObjectNode) config.path("authorities")).remove("walletProvider");
+    ((ObjectNode) config.path("authorities")).remove("walletAttestationIssuer");
     Files.writeString(file, yaml.writeValueAsString(config));
 
-    assertThat(run(cli(name -> null), file, "authorities init pid-issuer wallet-provider"))
+    assertThat(
+        run(cli(name -> null), file, "authorities init pid-issuer wallet-attestation-issuer"))
         .isEqualTo(1);
 
-    assertThat(err.toString()).contains("authorities.walletProvider is required");
+    assertThat(err.toString()).contains("authorities.walletAttestationIssuer is required");
     assertThat(directory.resolve("state")).doesNotExist();
     assertThat(directory.resolve("config")).doesNotExist();
   }
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"authorities init", "wallet-provider generate", "trust-source lote generate",
+      strings = {"authorities init", "wallet-attestation-issuer generate",
+          "trust-source lote generate",
           "ecosystem generate"})
   void changed_ca_common_names_preserve_existing_authorities_and_outputs(String command)
       throws Exception {
     Path file = initializedEcosystem();
     var config = (ObjectNode) yaml.readTree(Files.readString(file));
-    ((ObjectNode) config.path("authorities").path("walletProvider"))
+    ((ObjectNode) config.path("authorities").path("walletAttestationIssuer"))
         .put("commonName", "Changed Provider CA");
     Files.writeString(file, yaml.writeValueAsString(config));
     var before = snapshot(directory.resolve("config"));
@@ -159,7 +165,7 @@ class WalletPkiCliComponentTest {
 
     assertThat(run(cli(name -> "test-password"), file, command)).isEqualTo(1);
 
-    assertThat(err.toString()).contains("subject differs", "wallet-provider");
+    assertThat(err.toString()).contains("subject differs", "wallet-attestation-issuer");
     assertThat(snapshot(directory.resolve("config"))).isEqualTo(before);
     assertThat(snapshot(directory.resolve("state"))).isEqualTo(roots);
   }
@@ -167,11 +173,12 @@ class WalletPkiCliComponentTest {
   @Test
   void incomplete_authorities_fail_before_other_selected_roots_are_created() throws Exception {
     Path file = configuration();
-    Path incomplete = directory.resolve("state/authorities/wallet-provider/ca.pem");
+    Path incomplete = directory.resolve("state/authorities/wallet-attestation-issuer/ca.pem");
     Files.createDirectories(incomplete.getParent());
     Files.writeString(incomplete, "incomplete authority");
 
-    assertThat(run(cli(name -> null), file, "authorities init pid-issuer wallet-provider"))
+    assertThat(
+        run(cli(name -> null), file, "authorities init pid-issuer wallet-attestation-issuer"))
         .isEqualTo(1);
 
     assertThat(directory.resolve("state/authorities/pid-issuer")).doesNotExist();
@@ -182,7 +189,7 @@ class WalletPkiCliComponentTest {
   @ParameterizedTest
   @CsvSource({
       "pidIssuer, pid-issuer, PID_ISSUER_KEYSTORE_PASSWORD, certificates/issuer/pid_issuer.p12, pid_issuer",
-      "walletProvider, wallet-provider, WALLET_PROVIDER_KEYSTORE_PASSWORD, certificates/wallet-provider/wallet_provider.p12, wallet_provider",
+      "walletAttestationIssuer, wallet-attestation-issuer, WALLET_ATTESTATION_ISSUER_KEYSTORE_PASSWORD, certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12, wallet_attestation_issuer",
       "verifier.access, verifier access, VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD, certificates/verifier-access-certificate/verifier-access-certificate.p12, verifier_access_certificate",
       "verifier.registration, verifier registration, VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD, certificates/verifier-registration-certificate/verifier-registration-certificate.p12, registration"})
   void participant_generation_requires_only_its_own_role_and_password(String section,
@@ -212,13 +219,15 @@ class WalletPkiCliComponentTest {
 
   @Test
   void configuration_can_be_supplied_before_the_role() throws Exception {
-    Path file = configuration("walletProvider");
+    Path file = configuration("walletAttestationIssuer");
     var cli = cli(name -> "test-password");
-    assertThat(run(cli, file, "authorities init wallet-provider")).isZero();
+    assertThat(run(cli, file, "authorities init wallet-attestation-issuer")).isZero();
 
-    assertThat(cli.execute("-c", file.toString(), "wallet-provider", "generate")).isZero();
+    assertThat(cli.execute("-c", file.toString(), "wallet-attestation-issuer", "generate"))
+        .isZero();
 
-    assertThat(directory.resolve("config/certificates/wallet-provider/wallet_provider.p12"))
+    assertThat(directory
+        .resolve("config/certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12"))
         .isRegularFile();
   }
 
@@ -471,7 +480,7 @@ class WalletPkiCliComponentTest {
 
     assertThat(run(cli, file, "ecosystem generate")).isEqualTo(1);
 
-    assertThat(err.toString()).contains("walletProvider is required");
+    assertThat(err.toString()).contains("walletAttestationIssuer is required");
     assertThat(lookups).isEmpty();
     assertThat(directory.resolve("state")).doesNotExist();
     assertThat(directory.resolve("config")).doesNotExist();
@@ -479,7 +488,8 @@ class WalletPkiCliComponentTest {
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"pid-issuer generate", "wallet-provider generate", "verifier access generate",
+      strings = {"pid-issuer generate", "wallet-attestation-issuer generate",
+          "verifier access generate",
           "verifier registration generate", "trust-source generate", "trust-source lote generate"})
   void missing_role_configuration_has_a_clear_error_without_writing_outputs(String command)
       throws Exception {
@@ -599,7 +609,7 @@ class WalletPkiCliComponentTest {
   private Path configuration(String... sections) throws Exception {
     var source = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
     var selected = source.deepCopy();
-    selected.remove(List.of("pidIssuer", "walletProvider", "verifier", "trustSource"));
+    selected.remove(List.of("pidIssuer", "walletAttestationIssuer", "verifier", "trustSource"));
     for (String section : sections) {
       String[] parts = section.split("\\.");
       if (parts.length == 1) {

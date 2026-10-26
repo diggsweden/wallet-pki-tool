@@ -27,7 +27,7 @@ class AuthorityStoreTest {
   @ParameterizedTest
   @CsvSource({
       "PID_ISSUER, pid-issuer, DIGG Wallet PID Issuer CA",
-      "WALLET_PROVIDER, wallet-provider, DIGG Wallet Provider CA",
+      "WALLET_ATTESTATION_ISSUER, wallet-attestation-issuer, DIGG Wallet Attestation Issuer CA",
       "VERIFIER_ACCESS, verifier-access-certificate, DIGG Wallet Verifier Access Certificate CA",
       "VERIFIER_REGISTRATION, verifier-registration-certificate, DIGG Wallet Verifier Registration Certificate CA",
       "TRUST_SOURCE, trust-source, DIGG Wallet Trust Source CA"
@@ -48,7 +48,7 @@ class AuthorityStoreTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"PID_ISSUER, pidIssuer", "WALLET_PROVIDER, walletProvider",
+  @CsvSource({"PID_ISSUER, pidIssuer", "WALLET_ATTESTATION_ISSUER, walletAttestationIssuer",
       "VERIFIER_ACCESS, verifierAccess", "VERIFIER_REGISTRATION, verifierRegistration",
       "TRUST_SOURCE, trustSource"})
   void configured_common_names_are_used_to_create_and_reload_authorities(AuthorityRole role,
@@ -159,9 +159,10 @@ class AuthorityStoreTest {
     var config = EcosystemFixture.configuration(directory);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);
-    store.initialize(AuthorityRole.WALLET_PROVIDER);
+    store.initialize(AuthorityRole.WALLET_ATTESTATION_ISSUER);
     Files.copy(
-        directory.resolve("state/authorities").resolve(AuthorityRole.WALLET_PROVIDER.directory())
+        directory.resolve("state/authorities")
+            .resolve(AuthorityRole.WALLET_ATTESTATION_ISSUER.directory())
             .resolve("revocation-list.pem"),
         directory.resolve("state/authorities").resolve(AuthorityRole.PID_ISSUER.directory())
             .resolve("revocation-list.pem"),

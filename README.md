@@ -25,14 +25,14 @@ Use `--help` at any level to see the available operations and their prerequisite
 | :--- | :--- | :--- |
 | `authorities init [ROLE...]` | Missing CAs; selected public CA certificates and CRLs | Shared settings and selected `authorities` common names; no participant configuration or passwords. Defaults to all five authorities. |
 | `pid-issuer generate` | Three new keys in one keystore; issuer registration JWT/JSON | `pidIssuer`, its authority and password |
-| `wallet-provider generate` | New wallet attestation key and keystore | `walletProvider`, its authority and password |
+| `wallet-attestation-issuer generate` | New wallet attestation key and keystore | `walletAttestationIssuer`, its authority and password |
 | `verifier access generate` | New relying-party access key and keystore | `verifier.access`, its authority and password |
 | `verifier registration generate` | New registration key, keystore, JWT and environment file | `verifier.registration`, its authority and password |
 | `trust-source generate` | New signer key, keystore and public certificate; LoTE and development status-list fixture | `trustSource.signer` and `lote`; trust-source authority/password and configured public LoTE CAs |
 | `trust-source lote generate` | Only the LoTE, retaining the signer | `trustSource.signer` and `lote`; existing signer keystore/password, public trust-source CA and configured public LoTE CAs |
 | `ecosystem generate` | All five participant artifact sets and their documents | Complete role configuration, all five authorities and passwords |
 
-Authority names are `pid-issuer`, `wallet-provider`, `verifier-access`, `verifier-registration`, and `trust-source`.
+Authority names are `pid-issuer`, `wallet-attestation-issuer`, `verifier-access`, `verifier-registration`, and `trust-source`.
 
 Their certificate common names are configured separately under `authorities`. Each operation requires settings only for the local CAs it uses; initializing all five requires all five entries.
 
@@ -42,11 +42,11 @@ The bulk command checks all configuration, passwords, authorities and trust anch
 
 ## Generate one participant
 
-[examples/wallet-provider.yaml](examples/wallet-provider.yaml) contains only shared settings and the wallet-provider role:
+[examples/wallet-attestation-issuer.yaml](examples/wallet-attestation-issuer.yaml) contains only shared settings and the wallet-attestation-issuer role:
 
 ```bash
-java -jar target/wallet-pki-tool.jar authorities init wallet-provider -c examples/wallet-provider.yaml
-java -jar target/wallet-pki-tool.jar wallet-provider generate -c examples/wallet-provider.yaml
+java -jar target/wallet-pki-tool.jar authorities init wallet-attestation-issuer -c examples/wallet-attestation-issuer.yaml
+java -jar target/wallet-pki-tool.jar wallet-attestation-issuer generate -c examples/wallet-attestation-issuer.yaml
 ```
 
 Other roles can be configured independently in the same way. A verifier can have only `access` or only `registration`. LoTE-only generation requires LoTE settings and the signer keystore/password reference; `signer.commonName` and `certificateFile` are needed only when generating a new signer. Supplied sections are validated even if a command does not use them.
@@ -79,7 +79,7 @@ trustedAuthorities:
 
 Use multiple entries for CA rotation overlap or external CAs. `certificateFile` is an input path relative to the working directory, or an absolute path; it is independent of `outputDirectory`. File overrides need no corresponding local CA or private key and are read without copying or changing the input file.
 
-The supported types are `pidIssuer`, `walletProvider`, `verifierAccess`, and `verifierRegistration`. Omitted types and empty lists contribute no entries and require no local CA. The containing type determines the service type, regardless of the certificate's subject. This also allows intentionally incomplete trust lists or CAs assigned to another type for negative testing. Missing files, malformed certificates and certificates without CA basic constraints are rejected before generation writes outputs.
+The supported types are `pidIssuer`, `walletAttestationIssuer`, `verifierAccess`, and `verifierRegistration`. Omitted types and empty lists contribute no entries and require no local CA. The containing type determines the service type, regardless of the certificate's subject. This also allows intentionally incomplete trust lists or CAs assigned to another type for negative testing. Missing files, malformed certificates and certificates without CA basic constraints are rejected before generation writes outputs.
 
 When migrating a single-entry configuration, turn each type's metadata object into a list by adding `-` before its first field and indenting the remaining fields.
 
@@ -91,8 +91,8 @@ Schema version `1` keeps CA common names and role output filenames in YAML. Shar
 authorities:
   pidIssuer:
     commonName: DIGG Wallet PID Issuer CA
-  walletProvider:
-    commonName: DIGG Wallet Provider CA
+  walletAttestationIssuer:
+    commonName: DIGG Wallet Attestation Issuer CA
   verifierAccess:
     commonName: DIGG Wallet Verifier Access Certificate CA
   verifierRegistration:
@@ -116,15 +116,29 @@ Passwords select exactly one environment variable or file:
 
 ```yaml
 keystorePassword:
-  env: WALLET_PROVIDER_KEYSTORE_PASSWORD
+  env: WALLET_ATTESTATION_ISSUER_KEYSTORE_PASSWORD
 ```
 
 ```yaml
 keystorePassword:
-  file: /run/secrets/wallet-provider-password
+  file: /run/secrets/wallet-attestation-issuer-password
 ```
 
 The tool does not load `.env` files itself.
+
+### Migrating the wallet generation role
+
+The `wallet-attestation-issuer` command and `walletAttestationIssuer` YAML sections
+replace `wallet-provider` and `walletProvider`. Update the authority directory,
+output path and password reference when migrating a configuration. The generated
+keystore alias is `wallet_attestation_issuer`. Existing CA subjects must still
+match the configured common name; the command does not migrate or replace roots.
+
+A legacy wallet-provider service can retain its existing identity during the
+migration. Include its public CA as an additional `certificateFile` entry under
+`trustSource.lote.trustedAuthorities.walletAttestationIssuer`; both entries use
+the standard wallet issuance service type. The generator does not renew that
+legacy identity.
 
 ## Output
 
@@ -140,6 +154,9 @@ config/
 Keep `.wallet-pki/` private and preserve it between runs. Losing it means losing the CA keys.
 
 The LoTE file is named `trusted-entities.json` for the consuming service, but contains a signed compact JWS.
+
+On POSIX filesystems, public artifacts use `0644` permissions for container
+consumers. Newly created CA private keys retain owner-only permissions.
 
 `trust-source generate` and `ecosystem generate` also create a signed development fixture with 8,192 valid status entries at `<caDistribution.directory>/signed/status-list.jwt`, using `<caDistribution.baseUrl>/signed/status-list.jwt` as its URL and the LoTE validity period; there are no status-list commands or settings, and revocation management is out of scope.
 

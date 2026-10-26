@@ -17,7 +17,7 @@ import picocli.CommandLine.ScopeType;
 import se.digg.wallet.pki.application.PidIssuerFlow;
 import se.digg.wallet.pki.application.TrustSourceFlow;
 import se.digg.wallet.pki.application.VerifierFlow;
-import se.digg.wallet.pki.application.WalletProviderFlow;
+import se.digg.wallet.pki.application.WalletAttestationIssuerFlow;
 import se.digg.wallet.pki.application.WalletServicesPkiGenerator;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.PkiConfiguration;
@@ -45,7 +45,7 @@ public class WalletPkiCli {
   public WalletPkiCli(ConfigurationLoader loader, SecretResolver secrets, PrintWriter out,
       PrintWriter err) {
     var pidIssuer = new PidIssuerFlow(secrets);
-    var walletProvider = new WalletProviderFlow(secrets);
+    var walletAttestationIssuer = new WalletAttestationIssuerFlow(secrets);
     var verifier = new VerifierFlow(secrets);
     var trustSource = new TrustSourceFlow(secrets);
     commandLine = new CommandLine(this);
@@ -59,10 +59,11 @@ public class WalletPkiCli {
         "Create three new keys, replace the PID keystore and rebuild issuer registration JWT/JSON. "
             + "Requires the PID authority and password.",
         pidIssuer::generate));
-    commandLine.addSubcommand("wallet-provider", participant("wallet-provider", loader,
-        "Create a new attestation key and replace the wallet-provider keystore. "
-            + "Requires the wallet-provider authority and password.",
-        walletProvider::generate));
+    commandLine.addSubcommand("wallet-attestation-issuer",
+        participant("wallet-attestation-issuer", loader,
+            "Create a new attestation key and replace the wallet-attestation-issuer keystore. "
+                + "Requires the wallet-attestation-issuer authority and password.",
+            walletAttestationIssuer::generate));
     commandLine.addSubcommand("verifier", group("verifier", "Generate verifier identities.")
         .addSubcommand("access", participant("access", loader,
             "Create a new access key and replace the verifier access keystore. "
