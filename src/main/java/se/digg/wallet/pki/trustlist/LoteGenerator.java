@@ -91,7 +91,7 @@ public class LoteGenerator {
 
   private String serviceType(LoteAuthority authority) {
     return switch (authority.role()) {
-      case WALLET_PROVIDER -> SVC_TYPE_WALLET_ISSUANCE;
+      case WALLET_ATTESTATION_ISSUER -> SVC_TYPE_WALLET_ISSUANCE;
       case PID_ISSUER -> SVC_TYPE_PID_ISSUANCE;
       case VERIFIER_ACCESS -> SVC_TYPE_WRPAC_ISSUANCE;
       case VERIFIER_REGISTRATION -> SVC_TYPE_WRPRC_ISSUANCE;

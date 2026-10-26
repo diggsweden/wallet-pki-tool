@@ -27,8 +27,8 @@ class ConfigurationLoaderTest {
     assertThat(config.authorities().pidIssuer().commonName())
         .isEqualTo("DIGG Wallet PID Issuer CA");
     assertThat(config.pidIssuer().signing().commonName()).isEqualTo("PID Issuer (Ecosystem)");
-    assertThat(config.walletProvider().signing().subjectAlternativeNames().dns())
-        .contains("wallet-provider");
+    assertThat(config.walletAttestationIssuer().signing().subjectAlternativeNames().dns())
+        .contains("wallet-attestation-issuer");
     assertThat(config.verifier().registration().registration().requestedPidClaims())
         .contains("address.street_address");
     assertThat(config.trustSource().signer().keystorePassword().env())
@@ -49,8 +49,9 @@ class ConfigurationLoaderTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"pidIssuer", "walletProvider", "verifierAccess", "verifierRegistration",
-      "trustSource"})
+  @ValueSource(
+      strings = {"pidIssuer", "walletAttestationIssuer", "verifierAccess", "verifierRegistration",
+          "trustSource"})
   void authority_common_names_cannot_be_blank(String role) throws Exception {
     var yaml = YAMLMapper.builder().build();
     var document = yaml.readTree(EcosystemFixture.yaml(directory));
@@ -104,8 +105,9 @@ class ConfigurationLoaderTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"pidIssuer", "walletProvider", "verifier.access", "verifier.registration",
-      "trustSource"})
+  @ValueSource(
+      strings = {"pidIssuer", "walletAttestationIssuer", "verifier.access", "verifier.registration",
+          "trustSource"})
   void authority_settings_are_rejected_for_every_role(String section) throws Exception {
     var yaml = YAMLMapper.builder().build();
     var document = yaml.readTree(EcosystemFixture.yaml(directory));
@@ -137,12 +139,12 @@ class ConfigurationLoaderTest {
 
   @Test
   void the_single_participant_example_has_no_unrelated_role_requirements() {
-    var config = loader.load(Path.of("examples/wallet-provider.yaml"));
+    var config = loader.load(Path.of("examples/wallet-attestation-issuer.yaml"));
 
-    assertThat(config.walletProvider().keystoreFile())
-        .isEqualTo("certificates/wallet-provider/wallet_provider.p12");
-    assertThat(config.authorities().walletProvider().commonName())
-        .isEqualTo("DIGG Wallet Provider CA");
+    assertThat(config.walletAttestationIssuer().keystoreFile())
+        .isEqualTo("certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12");
+    assertThat(config.authorities().walletAttestationIssuer().commonName())
+        .isEqualTo("DIGG Wallet Attestation Issuer CA");
     assertThat(config.authorities().pidIssuer()).isNull();
     assertThat(config.caDistribution().baseUrl()).isEqualTo("http://trust-source");
     assertThat(config.pidIssuer()).isNull();
@@ -181,7 +183,7 @@ class ConfigurationLoaderTest {
 
   @Test
   void shared_ca_distribution_settings_preserve_private_state_separation() throws Exception {
-    String config = Files.readString(Path.of("examples/wallet-provider.yaml"))
+    String config = Files.readString(Path.of("examples/wallet-attestation-issuer.yaml"))
         .replace("stateDirectory: ./.wallet-pki", "stateDirectory: ./config/trust-source/private");
 
     assertInvalid(config, "must not overlap");

@@ -83,8 +83,8 @@ public final class TrustSourceFlow {
     var authorities = new AuthorityStore(config);
     var settings = config.trustSource().lote().trustedAuthorities();
     var entries = new ArrayList<LoteAuthority>();
-    loadTrustedAuthorities(entries, authorities, AuthorityRole.WALLET_PROVIDER,
-        settings.walletProvider());
+    loadTrustedAuthorities(entries, authorities, AuthorityRole.WALLET_ATTESTATION_ISSUER,
+        settings.walletAttestationIssuer());
     loadTrustedAuthorities(entries, authorities, AuthorityRole.PID_ISSUER, settings.pidIssuer());
     loadTrustedAuthorities(entries, authorities, AuthorityRole.VERIFIER_ACCESS,
         settings.verifierAccess());

@@ -11,7 +11,7 @@ import se.digg.wallet.pki.domain.Organization;
 /** Shared settings and optional wallet roles; each operation requires its own role inputs. */
 public record PkiConfiguration(int schemaVersion, String stateDirectory, String outputDirectory,
     Organization organization, AuthoritiesConfig authorities, CaDistributionConfig caDistribution,
-    PidIssuerConfig pidIssuer, WalletProviderConfig walletProvider,
+    PidIssuerConfig pidIssuer, WalletAttestationIssuerConfig walletAttestationIssuer,
     VerifierConfig verifier, TrustSourceConfig trustSource) {
   public PkiConfiguration {
     if (schemaVersion != 1)

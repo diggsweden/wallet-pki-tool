@@ -28,7 +28,7 @@ final class InitAuthoritiesCommand implements Callable<Integer> {
   @Spec
   private CommandSpec spec;
   @Parameters(paramLabel = "ROLES",
-      description = "Optional authorities: pid-issuer, wallet-provider, "
+      description = "Optional authorities: pid-issuer, wallet-attestation-issuer, "
           + "verifier-access, verifier-registration, trust-source. Default: all five.")
   private List<AuthorityRole> roles = new ArrayList<>();
   private final ConfigurationLoader loader;

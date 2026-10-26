@@ -12,19 +12,19 @@ organization:
   identifier: VATSE-12345678
 
 authorities:
-  walletProvider:
-    commonName: DIGG Wallet Provider CA
+  walletAttestationIssuer:
+    commonName: DIGG Wallet Attestation Issuer CA
 
 caDistribution:
   baseUrl: http://trust-source
   directory: trust-source
   rootCrlFile: trust-source/revocation-list.pem
 
-walletProvider:
-  keystoreFile: certificates/wallet-provider/wallet_provider.p12
+walletAttestationIssuer:
+  keystoreFile: certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12
   signing:
-    commonName: Wallet Provider (Ecosystem)
+    commonName: Wallet Attestation Issuer (Ecosystem)
     subjectAlternativeNames:
-      dns: [localhost, wallet-provider]
+      dns: [localhost, wallet-attestation-issuer]
   keystorePassword:
-    env: WALLET_PROVIDER_KEYSTORE_PASSWORD
+    env: WALLET_ATTESTATION_ISSUER_KEYSTORE_PASSWORD

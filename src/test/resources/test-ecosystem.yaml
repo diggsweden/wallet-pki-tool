@@ -15,8 +15,8 @@ organization:
 authorities:
   pidIssuer:
     commonName: DIGG Wallet PID Issuer CA
-  walletProvider:
-    commonName: DIGG Wallet Provider CA
+  walletAttestationIssuer:
+    commonName: DIGG Wallet Attestation Issuer CA
   verifierAccess:
     commonName: DIGG Wallet Verifier Access Certificate CA
   verifierRegistration:
@@ -46,14 +46,14 @@ pidIssuer:
     issuer: did:web:localhost
     subject: did:web:localhost
 
-walletProvider:
-  keystoreFile: certificates/wallet-provider/wallet_provider.p12
+walletAttestationIssuer:
+  keystoreFile: certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12
   signing:
-    commonName: Wallet Provider (Ecosystem)
+    commonName: Wallet Attestation Issuer (Ecosystem)
     subjectAlternativeNames:
-      dns: [localhost, wallet-provider]
+      dns: [localhost, wallet-attestation-issuer]
   keystorePassword:
-    env: WALLET_PROVIDER_KEYSTORE_PASSWORD
+    env: WALLET_ATTESTATION_ISSUER_KEYSTORE_PASSWORD
 
 verifier:
   access:
@@ -119,8 +119,8 @@ trustSource:
           serviceName: Local PID Issuance
           informationUrl: http://localhost
           streetAddress: Local
-      walletProvider:
-        - entityName: Local Wallet Provider
+      walletAttestationIssuer:
+        - entityName: Local Wallet Attestation Issuer
           serviceName: Local Wallet Issuance
           informationUrl: http://localhost
           streetAddress: Local

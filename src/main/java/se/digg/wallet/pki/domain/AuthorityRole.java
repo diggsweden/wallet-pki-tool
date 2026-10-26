@@ -7,7 +7,7 @@ package se.digg.wallet.pki.domain;
 /** Fixed local CA roles and their state and CA distribution directory names. */
 public enum AuthorityRole {
   PID_ISSUER("pid-issuer"),
-  WALLET_PROVIDER("wallet-provider"),
+  WALLET_ATTESTATION_ISSUER("wallet-attestation-issuer"),
   VERIFIER_ACCESS("verifier-access-certificate"),
   VERIFIER_REGISTRATION("verifier-registration-certificate"),
   TRUST_SOURCE("trust-source");

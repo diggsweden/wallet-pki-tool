@@ -9,7 +9,7 @@ import java.nio.file.Path;
 import java.security.SecureRandom;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
-import se.digg.wallet.pki.config.WalletProviderConfig;
+import se.digg.wallet.pki.config.WalletAttestationIssuerConfig;
 import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.domain.AuthorityRole;
@@ -17,11 +17,11 @@ import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 
-/** Wallet attestation signing identity and the wallet_provider keystore entry. */
-public final class WalletProviderFlow {
+/** Wallet attestation signing identity and the wallet_attestation_issuer keystore entry. */
+public final class WalletAttestationIssuerFlow {
   private final SecretResolver secrets;
 
-  public WalletProviderFlow(SecretResolver secrets) {
+  public WalletAttestationIssuerFlow(SecretResolver secrets) {
     this.secrets = secrets;
   }
 
@@ -31,28 +31,30 @@ public final class WalletProviderFlow {
     }
   }
 
-  static WalletProviderConfig requireConfiguration(PkiConfiguration config) {
-    return Checks.required(config.walletProvider(), "walletProvider");
+  static WalletAttestationIssuerConfig requireConfiguration(PkiConfiguration config) {
+    return Checks.required(config.walletAttestationIssuer(), "walletAttestationIssuer");
   }
 
   ServicePkiInputs loadInputs(PkiConfiguration config) {
-    var walletProvider = requireConfiguration(config);
-    return ServicePkiInputs.load(config, AuthorityRole.WALLET_PROVIDER,
-        walletProvider.keystorePassword(), secrets);
+    var walletAttestationIssuer = requireConfiguration(config);
+    return ServicePkiInputs.load(config, AuthorityRole.WALLET_ATTESTATION_ISSUER,
+        walletAttestationIssuer.keystorePassword(), secrets);
   }
 
   void generate(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {
-    var walletProvider = config.walletProvider();
+    var walletAttestationIssuer = config.walletAttestationIssuer();
     var authority = inputs.authority();
     var certificates =
         new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
     var key = new EcKeyGenerator().generateKeyPair();
     var certificate = certificates.issueWalletSigningCertificate(
-        walletProvider.signing().subject(config.organization()), key.getPublic(), authority);
+        walletAttestationIssuer.signing().subject(config.organization()), key.getPublic(),
+        authority);
     new IdentityStores().write(
-        Path.of(config.outputDirectory()).resolve(walletProvider.keystoreFile()), "wallet_provider",
+        Path.of(config.outputDirectory()).resolve(walletAttestationIssuer.keystoreFile()),
+        "wallet_attestation_issuer",
         new SigningIdentity(key, certificate), authority, inputs.keystorePassword());
     inputs.publishAuthority();
-    out.println("Generated: wallet-provider (new keys; selected files replaced)");
+    out.println("Generated: wallet-attestation-issuer (new keys; selected files replaced)");
   }
 }

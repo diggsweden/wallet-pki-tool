@@ -36,7 +36,7 @@ class WalletServicesPkiGeneratorTest {
     EcosystemFixture.initializeAuthorities(config);
     provisioner.generate(config, EcosystemFixture.quiet());
     for (String relative : List.of("certificates/issuer/pid_issuer.p12",
-        "certificates/wallet-provider/wallet_provider.p12",
+        "certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12",
         "certificates/verifier-access-certificate/verifier-access-certificate.p12",
         "certificates/verifier-registration-certificate/verifier-registration-certificate.p12",
         "certificates/trust-list-signer/trust_source.p12", "pid-issuer/issuer_wrprc.jwt",
@@ -56,9 +56,10 @@ class WalletServicesPkiGeneratorTest {
       assertThat(pid.getKey(alias, "test-password".toCharArray())).isNotNull();
     }
     assertThat(java.util.Collections
-        .list(load(directory.resolve("config/certificates/wallet-provider/wallet_provider.p12"))
+        .list(load(directory
+            .resolve("config/certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12"))
             .aliases()))
-        .containsExactly("wallet_provider");
+        .containsExactly("wallet_attestation_issuer");
     assertThat(java.util.Collections
         .list(load(directory.resolve(
             "config/certificates/verifier-access-certificate/verifier-access-certificate.p12"))
@@ -145,7 +146,8 @@ class WalletServicesPkiGeneratorTest {
         Files.readAllBytes(directory.resolve("config/certificates/issuer/pid_issuer.p12"));
     byte[] walletBefore =
         Files.readAllBytes(
-            directory.resolve("config/certificates/wallet-provider/wallet_provider.p12"));
+            directory.resolve(
+                "config/certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12"));
     byte[] loteBefore =
         Files.readAllBytes(directory.resolve("config/trust-source/signed/trusted-entities.json"));
     var selected = new PidIssuerFlow(new SecretResolver(
@@ -154,7 +156,8 @@ class WalletServicesPkiGeneratorTest {
     assertThat(Files.readAllBytes(directory.resolve("config/certificates/issuer/pid_issuer.p12")))
         .isNotEqualTo(pidBefore);
     assertThat(Files
-        .readAllBytes(directory.resolve("config/certificates/wallet-provider/wallet_provider.p12")))
+        .readAllBytes(directory.resolve(
+            "config/certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12")))
         .isEqualTo(walletBefore);
     assertThat(
         Files.readAllBytes(directory.resolve("config/trust-source/signed/trusted-entities.json")))
@@ -249,7 +252,7 @@ class WalletServicesPkiGeneratorTest {
   void artifact_paths_are_read_from_yaml_for_generation_and_signer_reuse() throws Exception {
     var artifacts = List.of(
         "certificates/issuer/pid_issuer.p12",
-        "certificates/wallet-provider/wallet_provider.p12",
+        "certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12",
         "certificates/verifier-access-certificate/verifier-access-certificate.p12",
         "certificates/verifier-registration-certificate/verifier-registration-certificate.p12",
         "pid-issuer/issuer_wrprc.jwt",
