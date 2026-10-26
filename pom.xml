@@ -169,7 +169,9 @@ SPDX-License-Identifier: CC0-1.0
         <configuration>
           <archive>
             <manifest>
-              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+              <addDefaultImplementationEntries>
+                true
+              </addDefaultImplementationEntries>
               <mainClass>se.digg.wallet.pki.cli.WalletPkiCli</mainClass>
             </manifest>
           </archive>
