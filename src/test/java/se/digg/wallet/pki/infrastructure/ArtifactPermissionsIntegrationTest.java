@@ -41,7 +41,7 @@ class ArtifactPermissionsIntegrationTest {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
-  void keystores_are_readable_only_by_the_owner(boolean replacing,
+  void keystores_are_readable_by_container_users(boolean replacing,
       @TempDir Path directory) throws Exception {
     assumeTrue(Files.getFileAttributeView(directory, PosixFileAttributeView.class) != null);
     var manager = new KeystoreManager();
@@ -50,13 +50,13 @@ class ArtifactPermissionsIntegrationTest {
     Path file = directory.resolve("issuer.p12");
     if (replacing) {
       Files.writeString(file, "old keystore");
-      Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r--r--"));
+      Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
     }
 
     manager.saveKeyStore(store, file, password);
 
     assertThat(Files.getPosixFilePermissions(file))
-        .isEqualTo(PosixFilePermissions.fromString("rw-------"));
+        .isEqualTo(PosixFilePermissions.fromString("rw-r--r--"));
     assertThat(manager.loadKeyStore(file, password).size()).isZero();
     try (var files = Files.list(directory)) {
       assertThat(files.toList()).containsExactly(file);
