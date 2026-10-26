@@ -9,6 +9,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -116,7 +119,8 @@ public class KeystoreManager {
   }
 
   /**
-   * Saves the KeyStore to the specified output file, creating parent directories if needed.
+   * Saves the KeyStore atomically with owner-only permissions on POSIX filesystems, creating
+   * parent directories if needed.
    *
    * @param keyStore the KeyStore to save
    * @param outputPath path to the destination .p12 file
@@ -126,18 +130,35 @@ public class KeystoreManager {
     Objects.requireNonNull(keyStore, "keyStore must not be null");
     Objects.requireNonNull(outputPath, "outputPath must not be null");
 
+    Path temporary = null;
     try {
-      Path parent = outputPath.getParent();
-      if (parent != null) {
-        Files.createDirectories(parent);
+      Path absolute = outputPath.toAbsolutePath();
+      Path parent = absolute.getParent();
+      if (parent == null) {
+        throw new PkiCryptoException("Keystore path must name a file: " + outputPath);
+      }
+      Files.createDirectories(parent);
+      temporary = Files.createTempFile(parent, ".wallet-pki-", ".tmp");
+      if (Files.getFileAttributeView(temporary, PosixFileAttributeView.class) != null) {
+        Files.setPosixFilePermissions(temporary, PosixFilePermissions.fromString("rw-------"));
       }
 
       char[] passCopy = password != null ? password.clone() : new char[0];
-      try (OutputStream os = Files.newOutputStream(outputPath)) {
+      try (OutputStream os = Files.newOutputStream(temporary)) {
         keyStore.store(os, passCopy);
       }
+      Files.move(temporary, absolute, StandardCopyOption.ATOMIC_MOVE,
+          StandardCopyOption.REPLACE_EXISTING);
     } catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
       throw new PkiCryptoException("Failed to save PKCS#12 KeyStore to: " + outputPath, e);
+    } finally {
+      if (temporary != null) {
+        try {
+          Files.deleteIfExists(temporary);
+        } catch (IOException e) {
+          throw new PkiCryptoException("Cannot remove temporary keystore: " + temporary, e);
+        }
+      }
     }
   }
 

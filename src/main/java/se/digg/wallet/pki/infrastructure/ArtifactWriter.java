@@ -8,10 +8,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
 
-/** Output failures are fatal. A complete artifact replaces its previous version atomically. */
+/** Writes public artifacts with mode 0644 on POSIX filesystems, replacing them atomically. */
 public final class ArtifactWriter {
   private final EcKeyGenerator pem = new EcKeyGenerator();
 
@@ -26,6 +28,9 @@ public final class ArtifactWriter {
       Files.createDirectories(parent);
       temporary = Files.createTempFile(parent, ".wallet-pki-", ".tmp");
       Files.writeString(temporary, content);
+      if (Files.getFileAttributeView(temporary, PosixFileAttributeView.class) != null) {
+        Files.setPosixFilePermissions(temporary, PosixFilePermissions.fromString("rw-r--r--"));
+      }
       Files.move(temporary, absolute, StandardCopyOption.ATOMIC_MOVE,
           StandardCopyOption.REPLACE_EXISTING);
     } catch (IOException e) {
