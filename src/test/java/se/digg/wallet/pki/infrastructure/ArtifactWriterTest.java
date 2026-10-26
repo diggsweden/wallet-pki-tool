@@ -6,6 +6,7 @@ package se.digg.wallet.pki.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -14,7 +15,7 @@ import se.digg.wallet.pki.crypto.PkiCryptoException;
 
 class ArtifactWriterTest {
   @Test
-  void root_paths_are_rejected_with_a_clear_error(@TempDir Path directory) {
+  void root_paths_are_rejected_with_clear_errors(@TempDir Path directory) {
     Path root = directory.getFileSystem().getRootDirectories().iterator().next();
     assertThatThrownBy(() -> new ArtifactWriter().text(root, "content"))
         .isInstanceOf(PkiCryptoException.class)

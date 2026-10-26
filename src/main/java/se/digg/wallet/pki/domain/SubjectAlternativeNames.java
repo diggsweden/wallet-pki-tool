@@ -20,12 +20,14 @@ public record SubjectAlternativeNames(List<String> dns, List<String> ip, List<St
       }
     }
     for (String address : ip) {
-      if (!IPAddress.isValid(address))
+      if (!IPAddress.isValid(address)) {
         throw new IllegalArgumentException("Invalid IP SAN: " + address);
+      }
     }
     for (String value : uri) {
-      if (!URI.create(value).isAbsolute())
+      if (!URI.create(value).isAbsolute()) {
         throw new IllegalArgumentException("URI SAN must be absolute: " + value);
+      }
     }
   }
 

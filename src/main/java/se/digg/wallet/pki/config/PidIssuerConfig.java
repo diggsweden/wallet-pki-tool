@@ -24,6 +24,7 @@ public record PidIssuerConfig(String keystoreFile, SigningConfig signing,
       Checks.required(subjectAlternativeNames, "pidIssuer.encryption.subjectAlternativeNames");
     }
   }
+
   public record Registration(String jwtFile, String jsonFile, String issuer, String subject) {
     public Registration {
       Checks.relativePath(jwtFile, "pidIssuer.registration.jwtFile");

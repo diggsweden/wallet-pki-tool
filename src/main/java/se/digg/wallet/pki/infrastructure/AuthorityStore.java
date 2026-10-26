@@ -61,8 +61,9 @@ public final class AuthorityStore {
   /** Preflight initialized or incomplete roots before creating any selected authority. */
   public void validateExisting(AuthorityRole role) {
     config.authorities().require(role);
-    if (hasMaterial(role))
+    if (hasMaterial(role)) {
       load(role);
+    }
   }
 
   private boolean hasMaterial(AuthorityRole role) {
@@ -105,10 +106,12 @@ public final class AuthorityStore {
   }
 
   private void requireFile(Path file, AuthorityRole role) {
-    if (!Files.isRegularFile(file))
+    if (!Files.isRegularFile(file)) {
       throw new PkiConfigurationException("Missing authority material for "
           + role.directory() + ": " + file
-          + ". Run authorities init for managed roots; incomplete roots must be repaired, never replaced.");
+          + ". Run authorities init for managed roots; "
+          + "incomplete roots must be repaired, never replaced.");
+    }
   }
 
   public void publish(AuthorityRole role, CertificateAuthority authority) {
@@ -116,8 +119,9 @@ public final class AuthorityStore {
         authority.certificate());
     writer.pem(caDistributionDirectory.resolve(role.directory()).resolve("revocation-list.pem"),
         authority.crl());
-    if (role == AuthorityRole.TRUST_SOURCE)
+    if (role == AuthorityRole.TRUST_SOURCE) {
       writer.pem(Path.of(config.outputDirectory()).resolve(config.caDistribution().rootCrlFile()),
           authority.crl());
+    }
   }
 }

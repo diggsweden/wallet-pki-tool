@@ -6,6 +6,7 @@ package se.digg.wallet.pki.crypto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import java.security.cert.X509Certificate;
 import java.util.List;
 import org.bouncycastle.asn1.ASN1OctetString;
@@ -119,8 +120,9 @@ class CertificateProfileIssuerTest {
     for (var value : sequence) {
       var statement = QCStatement.getInstance(value);
       if (ETSIQCObjectIdentifiers.id_etsi_qcs_QcType.equals(statement.getStatementId())) {
-        for (var type : ASN1Sequence.getInstance(statement.getStatementInfo()))
+        for (var type : ASN1Sequence.getInstance(statement.getStatementInfo())) {
           types.add(type.toString());
+        }
       }
     }
     return types;

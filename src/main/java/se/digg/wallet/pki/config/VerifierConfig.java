@@ -19,6 +19,7 @@ public record VerifierConfig(Access access, Registration registration) {
       Checks.required(keystorePassword, "verifier.access.keystorePassword");
     }
   }
+
   public record Registration(String keystoreFile, String commonName,
       PasswordSource keystorePassword, VerifierRegistrationConfig registration) {
     public Registration {

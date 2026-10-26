@@ -32,12 +32,6 @@ public final class PidIssuerFlow {
     this.secrets = secrets;
   }
 
-  public void generate(PkiConfiguration config, PrintWriter out) {
-    try (var inputs = loadInputs(config)) {
-      generate(config, inputs, out);
-    }
-  }
-
   static PidIssuerConfig requireConfiguration(PkiConfiguration config) {
     return Checks.required(config.pidIssuer(), "pidIssuer");
   }
@@ -46,6 +40,12 @@ public final class PidIssuerFlow {
     var pidIssuer = requireConfiguration(config);
     return ServicePkiInputs.load(config, AuthorityRole.PID_ISSUER,
         pidIssuer.keystorePassword(), secrets);
+  }
+
+  public void generate(PkiConfiguration config, PrintWriter out) {
+    try (var inputs = loadInputs(config)) {
+      generate(config, inputs, out);
+    }
   }
 
   void generate(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {

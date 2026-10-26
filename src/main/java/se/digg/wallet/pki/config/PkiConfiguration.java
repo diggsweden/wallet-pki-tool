@@ -14,8 +14,9 @@ public record PkiConfiguration(int schemaVersion, String stateDirectory, String 
     PidIssuerConfig pidIssuer, WalletAttestationIssuerConfig walletAttestationIssuer,
     VerifierConfig verifier, TrustSourceConfig trustSource) {
   public PkiConfiguration {
-    if (schemaVersion != 1)
+    if (schemaVersion != 1) {
       throw new IllegalArgumentException("schemaVersion must be 1");
+    }
     Checks.text(stateDirectory, "stateDirectory");
     Checks.text(outputDirectory, "outputDirectory");
     Checks.required(organization, "organization");
@@ -34,8 +35,9 @@ public record PkiConfiguration(int schemaVersion, String stateDirectory, String 
     Path publicDirectory =
         Path.of(outputDirectory).resolve(caDistribution.directory()).toAbsolutePath()
             .normalize();
-    if (state.startsWith(publicDirectory) || publicDirectory.startsWith(state))
+    if (state.startsWith(publicDirectory) || publicDirectory.startsWith(state)) {
       throw new IllegalArgumentException(
           "Private state and public trust-source directories must not overlap");
+    }
   }
 }

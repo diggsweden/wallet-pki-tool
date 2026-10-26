@@ -11,22 +11,27 @@ public record TrustSourceConfig(Signer signer,
     String publicationBaseUrl, String publicationDirectory, String rootCrlFile,
     LoteConfig lote) {
   public TrustSourceConfig {
-    if (publicationBaseUrl != null)
+    if (publicationBaseUrl != null) {
       Checks.httpUrl(publicationBaseUrl, "trustSource.publicationBaseUrl");
-    if (publicationDirectory != null)
+    }
+    if (publicationDirectory != null) {
       Checks.relativePath(publicationDirectory, "trustSource.publicationDirectory");
-    if (rootCrlFile != null)
+    }
+    if (rootCrlFile != null) {
       Checks.relativePath(rootCrlFile, "trustSource.rootCrlFile");
+    }
   }
 
   public record Signer(String keystoreFile, String certificateFile,
       String commonName, PasswordSource keystorePassword) {
     public Signer {
       Checks.relativePath(keystoreFile, "trustSource.signer.keystoreFile");
-      if (certificateFile != null)
+      if (certificateFile != null) {
         Checks.relativePath(certificateFile, "trustSource.signer.certificateFile");
-      if (commonName != null)
+      }
+      if (commonName != null) {
         Checks.text(commonName, "trustSource.signer.commonName");
+      }
       Checks.required(keystorePassword, "trustSource.signer.keystorePassword");
     }
   }

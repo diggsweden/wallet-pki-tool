@@ -33,9 +33,10 @@ public final class SecretResolver {
         throw new PkiConfigurationException("Cannot read password file: " + source.file(), e);
       }
     }
-    if (value == null || value.isBlank())
+    if (value == null || value.isBlank()) {
       throw new PkiConfigurationException("Password source is not set or empty: "
           + (source.env() != null ? source.env() : source.file()));
+    }
     return value.toCharArray();
   }
 }

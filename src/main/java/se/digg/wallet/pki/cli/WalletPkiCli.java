@@ -44,10 +44,10 @@ public class WalletPkiCli {
 
   public WalletPkiCli(ConfigurationLoader loader, SecretResolver secrets, PrintWriter out,
       PrintWriter err) {
-    var pidIssuer = new PidIssuerFlow(secrets);
-    var walletAttestationIssuer = new WalletAttestationIssuerFlow(secrets);
-    var verifier = new VerifierFlow(secrets);
-    var trustSource = new TrustSourceFlow(secrets);
+    final var pidIssuer = new PidIssuerFlow(secrets);
+    final var walletAttestationIssuer = new WalletAttestationIssuerFlow(secrets);
+    final var verifier = new VerifierFlow(secrets);
+    final var trustSource = new TrustSourceFlow(secrets);
     commandLine = new CommandLine(this);
     String version = WalletPkiCli.class.getPackage().getImplementationVersion();
     commandLine.getCommandSpec()
@@ -79,7 +79,8 @@ public class WalletPkiCli {
             + "Requires the trust-source authority/password and configured public LoTE CAs.",
         trustSource::generate);
     trust.addSubcommand("lote", participant("lote", loader,
-        "Replace only LoTE using the existing signer. Requires its password, public trust-source CA "
+        "Replace only LoTE using the existing signer. "
+            + "Requires its password, public trust-source CA "
             + "and configured public LoTE CAs; "
             + "no CA private keys or participant passwords are read.",
         trustSource::generateLote));
@@ -94,10 +95,12 @@ public class WalletPkiCli {
             .filter(role -> role.name().toLowerCase(Locale.ROOT).replace('_', '-').equals(value))
             .findFirst().orElseThrow(() -> new CommandLine.TypeConversionException(
                 "Unknown authority role: " + value)));
-    if (out != null)
+    if (out != null) {
       commandLine.setOut(out);
-    if (err != null)
+    }
+    if (err != null) {
       commandLine.setErr(err);
+    }
   }
 
   private CommandLine participant(String name, ConfigurationLoader loader, String description,

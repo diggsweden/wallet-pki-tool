@@ -52,7 +52,7 @@ public final class LoteGenerator {
   public String buildLoteDocument(List<LoteAuthority> authorities, LoteConfig config,
       Organization organization) {
     Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
-    var entities = authorities.stream()
+    final var entities = authorities.stream()
         .map(authority -> entity(authority.certificate(), authority.entity(),
             serviceType(authority), organization, now))
         .collect(Collectors.joining(",\n", "[", "]"));

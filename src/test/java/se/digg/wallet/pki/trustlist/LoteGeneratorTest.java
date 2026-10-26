@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.trustlist;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -60,7 +61,8 @@ class LoteGeneratorTest {
     var expected = List.of(wallet, pid, access, registration);
     for (int i = 0; i < entities.size(); i++) {
       var encoded = entities.get(i)
-          .at("/TrustedEntityServices/0/ServiceInformation/ServiceDigitalIdentity/X509Certificates/0/val")
+          .at("/TrustedEntityServices/0/ServiceInformation/"
+              + "ServiceDigitalIdentity/X509Certificates/0/val")
           .asString();
       assertThat(Base64.getDecoder().decode(encoded)).isEqualTo(expected.get(i).getEncoded());
     }
@@ -112,7 +114,8 @@ class LoteGeneratorTest {
     assertThat(information.at("/TEAddress/TEPostalAddress/0/StreetAddress").asString())
         .isEqualTo(text);
     assertThat(document.at(
-        "/LoTE/TrustedEntitiesList/0/TrustedEntityServices/0/ServiceInformation/ServiceName/0/value")
+        "/LoTE/TrustedEntitiesList/0/TrustedEntityServices/0/"
+            + "ServiceInformation/ServiceName/0/value")
         .asString()).isEqualTo(text);
   }
 }

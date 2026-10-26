@@ -6,6 +6,7 @@ package se.digg.wallet.pki.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,7 @@ class SecretResolverTest {
   }
 
   @Test
-  void password_files_allow_a_trailing_newline_and_preserve_leading_spaces(@TempDir Path directory)
+  void password_files_allow_trailing_newlines_and_preserve_leading_spaces(@TempDir Path directory)
       throws Exception {
     Path file = directory.resolve("password");
     Files.writeString(file, "  test-value\n");
