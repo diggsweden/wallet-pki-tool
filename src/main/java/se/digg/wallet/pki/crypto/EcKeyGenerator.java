@@ -8,10 +8,9 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.KeyPair;
@@ -23,7 +22,6 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.spec.ECGenParameterSpec;
-import java.util.Set;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMKeyPair;
@@ -47,18 +45,9 @@ public class EcKeyGenerator {
 
   private final SecureRandom secureRandom;
 
-  /** Default constructor using standard SecureRandom. */
+  /** Default constructor with an independent SecureRandom instance. */
   public EcKeyGenerator() {
-    this(new SecureRandom());
-  }
-
-  /**
-   * Constructor with explicit SecureRandom.
-   *
-   * @param secureRandom the secure random instance
-   */
-  public EcKeyGenerator(SecureRandom secureRandom) {
-    this.secureRandom = secureRandom;
+    this.secureRandom = new SecureRandom();
   }
 
   /**
@@ -111,7 +100,7 @@ public class EcKeyGenerator {
   }
 
   /**
-   * Writes a private key to disk in PEM format with owner-only permissions (0600 / rw-------).
+   * Writes a private key to disk in PEM format with mode 0644 on POSIX filesystems.
    *
    * @param privateKey the private key
    * @param outputPath the destination file path
@@ -126,10 +115,8 @@ public class EcKeyGenerator {
       String pem = toPemString(privateKey);
       Files.writeString(outputPath, pem, StandardCharsets.UTF_8);
 
-      // Enforce owner-only permissions (0600) on POSIX filesystems to protect private keys
-      if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
-        Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rw-------");
-        Files.setPosixFilePermissions(outputPath, perms);
+      if (Files.getFileAttributeView(outputPath, PosixFileAttributeView.class) != null) {
+        Files.setPosixFilePermissions(outputPath, PosixFilePermissions.fromString("rw-r--r--"));
       }
     } catch (IOException e) {
       throw new PkiCryptoException("Failed to write private key PEM file to: " + outputPath, e);

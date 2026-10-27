@@ -22,7 +22,8 @@ import se.digg.wallet.pki.domain.AuthorityRole;
 @Command(name = "init", mixinStandardHelpOptions = true,
     description = "Create missing authorities and publish their certificates/CRLs. "
         + "Reuse existing roots; never replace incomplete roots. "
-        + "Requires shared organization/caDistribution settings and selected authority common names; "
+        + "Requires shared organization/caDistribution settings "
+        + "and selected authority common names; "
         + "no keystore passwords required.")
 final class InitAuthoritiesCommand implements Callable<Integer> {
   @Spec

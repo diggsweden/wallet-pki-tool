@@ -30,18 +30,6 @@ public final class VerifierFlow {
     this.secrets = secrets;
   }
 
-  public void generateAccess(PkiConfiguration config, PrintWriter out) {
-    try (var inputs = loadAccessInputs(config)) {
-      generateAccess(config, inputs, out);
-    }
-  }
-
-  public void generateRegistration(PkiConfiguration config, PrintWriter out) {
-    try (var inputs = loadRegistrationInputs(config)) {
-      generateRegistration(config, inputs, out);
-    }
-  }
-
   static VerifierConfig.Access requireAccessConfiguration(PkiConfiguration config) {
     var verifier = Checks.required(config.verifier(), "verifier");
     return Checks.required(verifier.access(), "verifier.access");
@@ -64,6 +52,12 @@ public final class VerifierFlow {
         registration.keystorePassword(), secrets);
   }
 
+  public void generateAccess(PkiConfiguration config, PrintWriter out) {
+    try (var inputs = loadAccessInputs(config)) {
+      generateAccess(config, inputs, out);
+    }
+  }
+
   void generateAccess(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {
     var access = config.verifier().access();
     var authority = inputs.authority();
@@ -79,6 +73,12 @@ public final class VerifierFlow {
         authority, inputs.keystorePassword());
     inputs.publishAuthority();
     out.println("Generated: verifier-access (new keys; selected files replaced)");
+  }
+
+  public void generateRegistration(PkiConfiguration config, PrintWriter out) {
+    try (var inputs = loadRegistrationInputs(config)) {
+      generateRegistration(config, inputs, out);
+    }
   }
 
   void generateRegistration(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {

@@ -13,14 +13,16 @@ public final class Checks {
   private Checks() {}
 
   public static String text(String value, String field) {
-    if (value == null || value.isBlank())
+    if (value == null || value.isBlank()) {
       throw new IllegalArgumentException(field + " is required");
+    }
     return value;
   }
 
   public static <T> T required(T value, String field) {
-    if (value == null)
+    if (value == null) {
       throw new IllegalArgumentException(field + " is required");
+    }
     return value;
   }
 
@@ -44,14 +46,16 @@ public final class Checks {
   }
 
   public static int positive(int value, String field) {
-    if (value <= 0)
+    if (value <= 0) {
       throw new IllegalArgumentException(field + " must be positive");
+    }
     return value;
   }
 
   public static List<String> texts(List<String> values, String field) {
-    if (values == null || values.isEmpty())
+    if (values == null || values.isEmpty()) {
       throw new IllegalArgumentException(field + " must not be empty");
+    }
     values.forEach(value -> text(value, field));
     return List.copyOf(values);
   }

@@ -14,11 +14,13 @@ public record AuthoritiesConfig(Authority pidIssuer, Authority walletAttestation
   public Authority require(AuthorityRole role) {
     return switch (role) {
       case PID_ISSUER -> Checks.required(pidIssuer, "authorities.pidIssuer");
-      case WALLET_ATTESTATION_ISSUER ->
-        Checks.required(walletAttestationIssuer, "authorities.walletAttestationIssuer");
+      case WALLET_ATTESTATION_ISSUER -> {
+        yield Checks.required(walletAttestationIssuer, "authorities.walletAttestationIssuer");
+      }
       case VERIFIER_ACCESS -> Checks.required(verifierAccess, "authorities.verifierAccess");
-      case VERIFIER_REGISTRATION ->
-        Checks.required(verifierRegistration, "authorities.verifierRegistration");
+      case VERIFIER_REGISTRATION -> {
+        yield Checks.required(verifierRegistration, "authorities.verifierRegistration");
+      }
       case TRUST_SOURCE -> Checks.required(trustSource, "authorities.trustSource");
     };
   }

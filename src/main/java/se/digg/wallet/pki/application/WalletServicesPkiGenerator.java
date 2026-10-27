@@ -36,7 +36,7 @@ public final class WalletServicesPkiGenerator {
         var verifierAccessInputs = verifier.loadAccessInputs(config);
         var verifierRegistrationInputs = verifier.loadRegistrationInputs(config);
         var trustSourceInputs = trustSource.loadInputs(config)) {
-      var trustedAuthorities = trustSource.loadTrustedAuthorities(config);
+      final var trustedAuthorities = trustSource.loadTrustedAuthorities(config);
 
       pidIssuer.generate(config, pidIssuerInputs, out);
       walletAttestationIssuer.generate(config, walletAttestationIssuerInputs, out);

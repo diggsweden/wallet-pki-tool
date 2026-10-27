@@ -43,13 +43,6 @@ public final class TrustSourceFlow {
     this.secrets = secrets;
   }
 
-  public void generate(PkiConfiguration config, PrintWriter out) {
-    try (var inputs = loadInputs(config)) {
-      var trustedAuthorities = loadTrustedAuthorities(config);
-      generate(config, inputs, trustedAuthorities, out);
-    }
-  }
-
   public void generateLote(PkiConfiguration config, PrintWriter out) {
     var trustSource = requireSignerConfiguration(config);
     Checks.required(trustSource.lote(), "trustSource.lote");
@@ -100,6 +93,13 @@ public final class TrustSourceFlow {
       var certificate = entry.certificateFile() == null ? authorities.loadPublic(role)
           : certificates.readCertificatePem(Path.of(entry.certificateFile()));
       entries.add(new LoteAuthority(role, certificate, entry));
+    }
+  }
+
+  public void generate(PkiConfiguration config, PrintWriter out) {
+    try (var inputs = loadInputs(config)) {
+      var trustedAuthorities = loadTrustedAuthorities(config);
+      generate(config, inputs, trustedAuthorities, out);
     }
   }
 

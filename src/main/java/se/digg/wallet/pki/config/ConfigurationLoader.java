@@ -24,12 +24,14 @@ public class ConfigurationLoader {
       .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
 
   public PkiConfiguration load(Path configPath) {
-    if (configPath == null || !Files.isRegularFile(configPath))
+    if (configPath == null || !Files.isRegularFile(configPath)) {
       throw new PkiConfigurationException("Configuration file not found: " + configPath);
+    }
     try {
       PkiConfiguration config = yamlMapper.readValue(configPath.toFile(), PkiConfiguration.class);
-      if (config == null)
+      if (config == null) {
         throw new PkiConfigurationException("Configuration is empty: " + configPath);
+      }
       return config;
     } catch (JacksonException e) {
       throw new PkiConfigurationException(

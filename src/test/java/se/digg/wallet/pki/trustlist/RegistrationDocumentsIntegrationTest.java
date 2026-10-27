@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.trustlist;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
 import com.nimbusds.jose.JWSObject;
 import java.nio.file.Files;
 import java.nio.file.Path;

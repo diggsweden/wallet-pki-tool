@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.trustlist;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -18,6 +19,7 @@ import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.domain.AuthorityRole;
 import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.support.EcosystemFixture;
+import tools.jackson.core.json.JsonWriteFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 class LoteGeneratorTest {
@@ -59,7 +61,8 @@ class LoteGeneratorTest {
     var expected = List.of(wallet, pid, access, registration);
     for (int i = 0; i < entities.size(); i++) {
       var encoded = entities.get(i)
-          .at("/TrustedEntityServices/0/ServiceInformation/ServiceDigitalIdentity/X509Certificates/0/val")
+          .at("/TrustedEntityServices/0/ServiceInformation/"
+              + "ServiceDigitalIdentity/X509Certificates/0/val")
           .asString();
       assertThat(Base64.getDecoder().decode(encoded)).isEqualTo(expected.get(i).getEncoded());
     }
@@ -71,6 +74,21 @@ class LoteGeneratorTest {
     assertThat(Duration.between(Instant.parse(scheme.get("ListIssueDateTime").asString()),
         Instant.parse(scheme.get("NextUpdate").asString()))).isEqualTo(Duration.ofDays(365));
     assertThat(json).contains("\"LoTE\"", "\"TrustedEntitiesList\"", "\"ServiceDigitalIdentity\"");
+  }
+
+  @Test
+  void supplied_mapper_serialization_settings_are_preserved() {
+    var mapper = JsonMapper.builder().enable(JsonWriteFeature.ESCAPE_NON_ASCII).build();
+    var generator = new LoteGenerator(mapper, new TrustListSigner());
+    var config = new LoteConfig("lote.jwt", "Svensk plånbok", 1, 30,
+        new LoteConfig.TrustedAuthorities(null, null, null, null));
+    var organization = new Organization("Digg", "SE", "VATSE-12345678");
+
+    String json = generator.buildLoteDocument(List.of(), config, organization);
+
+    assertThat(json).containsIgnoringCase("Svensk pl\\u00e5nbok");
+    assertThat(mapper.readTree(json).at("/LoTE/ListAndSchemeInformation/SchemeName/0/value")
+        .asString()).isEqualTo("Svensk plånbok");
   }
 
   @Test
@@ -96,7 +114,8 @@ class LoteGeneratorTest {
     assertThat(information.at("/TEAddress/TEPostalAddress/0/StreetAddress").asString())
         .isEqualTo(text);
     assertThat(document.at(
-        "/LoTE/TrustedEntitiesList/0/TrustedEntityServices/0/ServiceInformation/ServiceName/0/value")
+        "/LoTE/TrustedEntitiesList/0/TrustedEntityServices/0/"
+            + "ServiceInformation/ServiceName/0/value")
         .asString()).isEqualTo(text);
   }
 }

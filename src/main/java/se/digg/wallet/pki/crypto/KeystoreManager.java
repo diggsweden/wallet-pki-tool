@@ -119,8 +119,8 @@ public class KeystoreManager {
   }
 
   /**
-   * Saves the KeyStore atomically with owner-only permissions on POSIX filesystems, creating parent
-   * directories if needed.
+   * Saves the KeyStore atomically with mode 0644 on POSIX filesystems, creating parent directories
+   * if needed.
    *
    * @param keyStore the KeyStore to save
    * @param outputPath path to the destination .p12 file
@@ -140,7 +140,7 @@ public class KeystoreManager {
       Files.createDirectories(parent);
       temporary = Files.createTempFile(parent, ".wallet-pki-", ".tmp");
       if (Files.getFileAttributeView(temporary, PosixFileAttributeView.class) != null) {
-        Files.setPosixFilePermissions(temporary, PosixFilePermissions.fromString("rw-------"));
+        Files.setPosixFilePermissions(temporary, PosixFilePermissions.fromString("rw-r--r--"));
       }
 
       char[] passCopy = password != null ? password.clone() : new char[0];

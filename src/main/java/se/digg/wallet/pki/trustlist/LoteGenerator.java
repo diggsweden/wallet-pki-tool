@@ -23,7 +23,7 @@ import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Builds LoTE entries from explicitly assigned wallet roles; certificates are never classified. */
-public class LoteGenerator {
+public final class LoteGenerator {
   public static final String LOTE_TYPE_WALLET_PROVIDERS =
       "http://uri.etsi.org/19602/LoTEType/wallet-providers";
   public static final String SVC_TYPE_WALLET_ISSUANCE =
@@ -45,14 +45,14 @@ public class LoteGenerator {
   }
 
   public LoteGenerator(ObjectMapper objectMapper, TrustListSigner trustListSigner) {
-    this.objectMapper = Objects.requireNonNull(objectMapper);
+    this.objectMapper = Objects.requireNonNull(objectMapper).rebuild().build();
     this.trustListSigner = Objects.requireNonNull(trustListSigner);
   }
 
   public String buildLoteDocument(List<LoteAuthority> authorities, LoteConfig config,
       Organization organization) {
     Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
-    var entities = authorities.stream()
+    final var entities = authorities.stream()
         .map(authority -> entity(authority.certificate(), authority.entity(),
             serviceType(authority), organization, now))
         .collect(Collectors.joining(",\n", "[", "]"));

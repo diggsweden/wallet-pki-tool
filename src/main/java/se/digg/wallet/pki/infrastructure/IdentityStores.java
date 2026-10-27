@@ -41,8 +41,9 @@ public final class IdentityStores {
       new CertificateAuthorityManager()
           .validateKeyPair(new KeyPair(certificate.getPublicKey(), key), certificate);
       boolean[] usage = certificate.getKeyUsage();
-      if (usage == null || !usage[0])
+      if (usage == null || !usage[0]) {
         throw new PkiCryptoException("Trust signer lacks digitalSignature usage");
+      }
       return new SigningIdentity(new KeyPair(certificate.getPublicKey(), key), certificate);
     } catch (java.security.GeneralSecurityException e) {
       throw new PkiCryptoException("Cannot load trust-source signing identity: " + file, e);

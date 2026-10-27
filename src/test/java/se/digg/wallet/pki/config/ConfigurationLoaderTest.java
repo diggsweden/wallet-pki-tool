@@ -6,6 +6,7 @@ package se.digg.wallet.pki.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -169,6 +170,16 @@ class ConfigurationLoaderTest {
     assertThat(config.caDistribution())
         .isEqualTo(new CaDistributionConfig("http://trust-source", "trust-source",
             "trust-source/revocation-list.pem"));
+  }
+
+  @Test
+  void missing_ca_distribution_without_legacy_settings_is_rejected() throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    document.remove("caDistribution");
+    document.remove("trustSource");
+
+    assertInvalid(yaml.writeValueAsString(document), "caDistribution is required");
   }
 
   @Test

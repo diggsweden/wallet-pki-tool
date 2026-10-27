@@ -6,6 +6,7 @@ package se.digg.wallet.pki.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,8 @@ class AuthorityStoreTest {
       "PID_ISSUER, pid-issuer, DIGG Wallet PID Issuer CA",
       "WALLET_ATTESTATION_ISSUER, wallet-attestation-issuer, DIGG Wallet Attestation Issuer CA",
       "VERIFIER_ACCESS, verifier-access-certificate, DIGG Wallet Verifier Access Certificate CA",
-      "VERIFIER_REGISTRATION, verifier-registration-certificate, DIGG Wallet Verifier Registration Certificate CA",
+      "VERIFIER_REGISTRATION, verifier-registration-certificate, DIGG "
+          + "Wallet Verifier Registration Certificate CA",
       "TRUST_SOURCE, trust-source, DIGG Wallet Trust Source CA"
   })
   void configured_authorities_preserve_existing_subjects_and_artifact_paths(
@@ -155,7 +157,7 @@ class AuthorityStoreTest {
   }
 
   @Test
-  void a_different_authoritys_crl_is_rejected() throws Exception {
+  void crls_from_different_authorities_are_rejected() throws Exception {
     var config = EcosystemFixture.configuration(directory);
     var store = new AuthorityStore(config);
     store.initialize(AuthorityRole.PID_ISSUER);

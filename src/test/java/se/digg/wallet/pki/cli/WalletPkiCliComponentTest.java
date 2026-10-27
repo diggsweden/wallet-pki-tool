@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSObject;
 import com.nimbusds.jwt.SignedJWT;
@@ -110,8 +111,9 @@ class WalletPkiCliComponentTest {
     assertThat(run(cli, file, "authorities init wallet-attestation-issuer")).isZero();
 
     assertThat(snapshot(directory.resolve("state"))).containsAllEntriesOf(before);
-    try (var paths = Files.list(directory.resolve("state/ca"))) {
-      assertThat(paths.map(path -> path.getFileName().toString()).toList())
+    Path caDirectory = directory.resolve("state/ca");
+    try (var paths = Files.list(caDirectory)) {
+      assertThat(paths.map(caDirectory::relativize).map(Path::toString).toList())
           .containsExactlyInAnyOrder("pid-issuer", "wallet-attestation-issuer");
     }
   }
@@ -173,8 +175,9 @@ class WalletPkiCliComponentTest {
   @Test
   void incomplete_authorities_fail_before_other_selected_roots_are_created() throws Exception {
     Path file = configuration();
-    Path incomplete = directory.resolve("state/ca/wallet-attestation-issuer/ca.pem");
-    Files.createDirectories(incomplete.getParent());
+    Path authorityDirectory = directory.resolve("state/ca/wallet-attestation-issuer");
+    Files.createDirectories(authorityDirectory);
+    Path incomplete = authorityDirectory.resolve("ca.pem");
     Files.writeString(incomplete, "incomplete authority");
 
     assertThat(
@@ -188,10 +191,20 @@ class WalletPkiCliComponentTest {
 
   @ParameterizedTest
   @CsvSource({
-      "pidIssuer, pid-issuer, PID_ISSUER_KEYSTORE_PASSWORD, certificates/issuer/pid_issuer.p12, pid_issuer",
-      "walletAttestationIssuer, wallet-attestation-issuer, WALLET_ATTESTATION_ISSUER_KEYSTORE_PASSWORD, certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12, wallet_attestation_issuer",
-      "verifier.access, verifier access, VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD, certificates/verifier-access-certificate/verifier-access-certificate.p12, verifier_access_certificate",
-      "verifier.registration, verifier registration, VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD, certificates/verifier-registration-certificate/verifier-registration-certificate.p12, registration"})
+      "pidIssuer, pid-issuer, PID_ISSUER_KEYSTORE_PASSWORD, "
+          + "certificates/issuer/pid_issuer.p12, pid_issuer",
+      "walletAttestationIssuer, wallet-attestation-issuer, "
+          + "WALLET_ATTESTATION_ISSUER_KEYSTORE_PASSWORD, certificates/"
+          + "wallet-attestation-issuer/wallet_attestation_issuer.p12, "
+          + "wallet_attestation_issuer",
+      "verifier.access, verifier access, "
+          + "VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD, certificates/"
+          + "verifier-access-certificate/verifier-access-certificate.p12, "
+          + "verifier_access_certificate",
+      "verifier.registration, verifier registration, "
+          + "VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD, "
+          + "certificates/verifier-registration-certificate/"
+          + "verifier-registration-certificate.p12, registration"})
   void participant_generation_requires_only_its_own_role_and_password(String section,
       String command, String passwordName, String keystore, String alias) throws Exception {
     Path file = configuration(section);
@@ -235,7 +248,7 @@ class WalletPkiCliComponentTest {
   void participant_generation_preserves_unrelated_artifacts_and_authorities() throws Exception {
     Path file = initializedEcosystem();
     var before = snapshot(directory.resolve("config"));
-    var roots = snapshot(directory.resolve("state"));
+    final var roots = snapshot(directory.resolve("state"));
     var previousKey = keystore("certificates/issuer/pid_issuer.p12")
         .getCertificate("pid_issuer").getPublicKey();
     var cli = cli(name -> name.equals("PID_ISSUER_KEYSTORE_PASSWORD") ? "test-password" : null);
@@ -274,7 +287,7 @@ class WalletPkiCliComponentTest {
     Path file = initializedEcosystem();
     var previous = keystore("certificates/trust-list-signer/trust_source.p12")
         .getCertificate("trust_source").getPublicKey();
-    var before = snapshot(directory.resolve("config"));
+    final var before = snapshot(directory.resolve("config"));
 
     assertThat(run(cli(name -> "test-password"), file, "trust-source generate")).isZero();
 
@@ -338,7 +351,7 @@ class WalletPkiCliComponentTest {
 
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
-  void a_local_ca_and_a_certificate_file_can_share_a_lote_type(boolean absolutePath)
+  void local_cas_and_certificate_files_can_share_lote_types(boolean absolutePath)
       throws Exception {
     Path file = initializedEcosystem();
     var external = new CertificateAuthorityManager().createAuthority("external", "Previous PID CA");
@@ -353,7 +366,7 @@ class WalletPkiCliComponentTest {
     previous.put("entityName", "Previous PID Provider");
     entries.add(previous);
     Files.writeString(file, yaml.writeValueAsString(config));
-    var roots = snapshot(directory.resolve("state"));
+    final var roots = snapshot(directory.resolve("state"));
 
     assertThat(run(cli(name -> "test-password"), file, "trust-source lote generate")).isZero();
 
@@ -369,10 +382,12 @@ class WalletPkiCliComponentTest {
     var local = new CertificateAuthorityManager()
         .readCertificatePem(directory.resolve("state/ca/pid-issuer/ca.pem"));
     assertThat(Base64.getDecoder().decode(pidEntries.get(0)
-        .at("/TrustedEntityServices/0/ServiceInformation/ServiceDigitalIdentity/X509Certificates/0/val")
+        .at("/TrustedEntityServices/0/ServiceInformation/"
+            + "ServiceDigitalIdentity/X509Certificates/0/val")
         .asString())).isEqualTo(local.getEncoded());
     assertThat(Base64.getDecoder().decode(pidEntries.get(1)
-        .at("/TrustedEntityServices/0/ServiceInformation/ServiceDigitalIdentity/X509Certificates/0/val")
+        .at("/TrustedEntityServices/0/ServiceInformation/"
+            + "ServiceDigitalIdentity/X509Certificates/0/val")
         .asString())).isEqualTo(external.certificate().getEncoded());
     assertThat(pidEntries.get(1).at("/TrustedEntityInformation/TEName/0/value").asString())
         .isEqualTo("Previous PID Provider");
@@ -394,9 +409,10 @@ class WalletPkiCliComponentTest {
     Files.writeString(file, yaml.writeValueAsString(config));
     deleteAuthorityPrivateKeys(true);
     for (var role : AuthorityRole.values()) {
-      if (role != AuthorityRole.TRUST_SOURCE)
+      if (role != AuthorityRole.TRUST_SOURCE) {
         Files.delete(
             directory.resolve("state/ca").resolve(role.directory()).resolve("ca.pem"));
+      }
     }
 
     assertThat(run(cli(name -> "test-password"), file, "trust-source lote generate")).isZero();
@@ -404,7 +420,8 @@ class WalletPkiCliComponentTest {
     var entries = loteEntries();
     assertThat(entries.size()).isEqualTo(1);
     assertThat(Base64.getDecoder().decode(entries.get(0)
-        .at("/TrustedEntityServices/0/ServiceInformation/ServiceDigitalIdentity/X509Certificates/0/val")
+        .at("/TrustedEntityServices/0/ServiceInformation/"
+            + "ServiceDigitalIdentity/X509Certificates/0/val")
         .asString())).isEqualTo(external.certificate().getEncoded());
     assertThat(err.toString()).isEmpty();
   }
@@ -444,14 +461,14 @@ class WalletPkiCliComponentTest {
   void lote_generation_requires_only_lote_settings_and_existing_signer() throws Exception {
     initializedEcosystem();
     Path file = configuration("trustSource.signer", "trustSource.lote");
-    String output = "trust-source/signed/trusted-entities.json";
+    final String output = "trust-source/signed/trusted-entities.json";
     var config = (ObjectNode) yaml.readTree(Files.readString(file));
     ((ObjectNode) config.path("trustSource").path("signer"))
         .remove(List.of("certificateFile", "commonName"));
     Files.writeString(file, yaml.writeValueAsString(config));
     deleteAuthorityPrivateKeys(true);
     var before = snapshot(directory.resolve("config"));
-    var roots = snapshot(directory.resolve("state"));
+    final var roots = snapshot(directory.resolve("state"));
     var cli = cli(name -> name.equals("TRUST_SOURCE_KEYSTORE_PASSWORD") ? "test-password" : null);
 
     assertThat(run(cli, file, "trust-source lote generate")).isZero();
@@ -491,7 +508,7 @@ class WalletPkiCliComponentTest {
       strings = {"pid-issuer generate", "wallet-attestation-issuer generate",
           "verifier access generate",
           "verifier registration generate", "trust-source generate", "trust-source lote generate"})
-  void missing_role_configuration_has_a_clear_error_without_writing_outputs(String command)
+  void missing_role_configuration_reports_clear_errors_without_writing_outputs(String command)
       throws Exception {
     Path file = configuration();
 
@@ -542,7 +559,7 @@ class WalletPkiCliComponentTest {
   }
 
   @Test
-  void a_missing_document_prerequisite_does_not_replace_the_existing_trust_signer()
+  void missing_document_prerequisites_preserve_existing_trust_signers()
       throws Exception {
     initializedEcosystem();
     Path file = configuration("trustSource.signer");
@@ -555,7 +572,7 @@ class WalletPkiCliComponentTest {
   }
 
   @Test
-  void document_generation_never_creates_a_missing_signer() throws Exception {
+  void document_generation_never_creates_missing_signers() throws Exception {
     Path file = configuration("trustSource.signer", "trustSource.lote");
     var cli = cli(name -> "test-password");
     assertThat(run(cli, file, "authorities init")).isZero();
@@ -580,7 +597,7 @@ class WalletPkiCliComponentTest {
   }
 
   @Test
-  void missing_configuration_has_a_nonzero_exit_code() {
+  void missing_configuration_returns_nonzero_exit_codes() {
     assertThat(cli(name -> null).execute("pid-issuer", "generate", "-c", "missing.yaml"))
         .isEqualTo(1);
 

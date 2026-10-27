@@ -6,6 +6,7 @@ package se.digg.wallet.pki.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import com.nimbusds.jose.JWSObject;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -67,7 +68,8 @@ class WalletServicesPkiGeneratorTest {
         .containsExactly("verifier_access_certificate");
     assertThat(java.util.Collections.list(
         load(directory.resolve(
-            "config/certificates/verifier-registration-certificate/verifier-registration-certificate.p12"))
+            "config/certificates/verifier-registration-certificate/"
+                + "verifier-registration-certificate.p12"))
             .aliases()))
         .containsExactly("registration");
     var trust = load(directory.resolve("config/certificates/trust-list-signer/trust_source.p12"));
@@ -102,7 +104,8 @@ class WalletServicesPkiGeneratorTest {
     assertThat(registration.getHeader().getX509CertChain()).hasSize(2);
     assertThat(new TrustListSigner().verifyJws(registration.serialize(),
         load(directory.resolve(
-            "config/certificates/verifier-registration-certificate/verifier-registration-certificate.p12"))
+            "config/certificates/verifier-registration-certificate/"
+                + "verifier-registration-certificate.p12"))
             .getCertificate("registration").getPublicKey()))
         .isTrue();
     var payload = JsonMapper.builder().build().readTree(registration.getPayload().toString());
@@ -125,10 +128,11 @@ class WalletServicesPkiGeneratorTest {
               .resolve(role.directory()).resolve("revocation-list.pem")))
           .isTrue();
     }
-    try (var files =
-        Files.walk(directory.resolve("config/trust-source"))) {
+    Path trustSourceDirectory = directory.resolve("config/trust-source");
+    try (var files = Files.walk(trustSourceDirectory)) {
       assertThat(
-          files.filter(Files::isRegularFile).map(path -> path.getFileName().toString()).toList())
+          files.filter(Files::isRegularFile).map(trustSourceDirectory::relativize)
+              .map(Path::toString).toList())
           .noneMatch(name -> name.contains("private") || name.endsWith(".p12"));
     }
   }
@@ -140,7 +144,7 @@ class WalletServicesPkiGeneratorTest {
     var provisioner = EcosystemFixture.provisioner();
     EcosystemFixture.initializeAuthorities(config);
     provisioner.generate(config, EcosystemFixture.quiet());
-    byte[] root = Files.readAllBytes(directory.resolve("state/ca")
+    final byte[] root = Files.readAllBytes(directory.resolve("state/ca")
         .resolve(AuthorityRole.PID_ISSUER.directory()).resolve("ca.pem"));
     byte[] pidBefore =
         Files.readAllBytes(directory.resolve("config/certificates/issuer/pid_issuer.p12"));
@@ -148,7 +152,7 @@ class WalletServicesPkiGeneratorTest {
         Files.readAllBytes(
             directory.resolve(
                 "config/certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12"));
-    byte[] loteBefore =
+    final byte[] loteBefore =
         Files.readAllBytes(directory.resolve("config/trust-source/signed/trusted-entities.json"));
     var selected = new PidIssuerFlow(new SecretResolver(
         name -> name.equals("PID_ISSUER_KEYSTORE_PASSWORD") ? "test-password" : null));
@@ -175,9 +179,10 @@ class WalletServicesPkiGeneratorTest {
     EcosystemFixture.initializeAuthorities(config);
     provisioner.generate(config, EcosystemFixture.quiet());
     var before = snapshot(outputDirectory);
-    for (var role : AuthorityRole.values())
+    for (var role : AuthorityRole.values()) {
       Files.delete(directory.resolve("state/ca").resolve(role.directory())
           .resolve("ca_private_key.pem"));
+    }
     var selected = new TrustSourceFlow(new SecretResolver(
         name -> name.equals("TRUST_SOURCE_KEYSTORE_PASSWORD") ? "test-password" : null));
     selected.generateLote(config, EcosystemFixture.quiet());
@@ -236,7 +241,7 @@ class WalletServicesPkiGeneratorTest {
   }
 
   @Test
-  void trust_documents_do_not_create_a_missing_signer_implicitly() throws Exception {
+  void trust_documents_do_not_create_missing_signers_implicitly() throws Exception {
     var config = EcosystemFixture.configuration(directory);
     EcosystemFixture.initializeAuthorities(config);
     assertThatThrownBy(
@@ -300,9 +305,10 @@ class WalletServicesPkiGeneratorTest {
   private Map<String, String> snapshot(Path root) throws Exception {
     Map<String, String> result = new TreeMap<>();
     try (var paths = Files.walk(root)) {
-      for (Path path : paths.filter(Files::isRegularFile).toList())
+      for (Path path : paths.filter(Files::isRegularFile).toList()) {
         result.put(path.toString(),
             java.util.Base64.getEncoder().encodeToString(Files.readAllBytes(path)));
+      }
     }
     return result;
   }

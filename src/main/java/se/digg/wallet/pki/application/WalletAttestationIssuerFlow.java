@@ -25,12 +25,6 @@ public final class WalletAttestationIssuerFlow {
     this.secrets = secrets;
   }
 
-  public void generate(PkiConfiguration config, PrintWriter out) {
-    try (var inputs = loadInputs(config)) {
-      generate(config, inputs, out);
-    }
-  }
-
   static WalletAttestationIssuerConfig requireConfiguration(PkiConfiguration config) {
     return Checks.required(config.walletAttestationIssuer(), "walletAttestationIssuer");
   }
@@ -39,6 +33,12 @@ public final class WalletAttestationIssuerFlow {
     var walletAttestationIssuer = requireConfiguration(config);
     return ServicePkiInputs.load(config, AuthorityRole.WALLET_ATTESTATION_ISSUER,
         walletAttestationIssuer.keystorePassword(), secrets);
+  }
+
+  public void generate(PkiConfiguration config, PrintWriter out) {
+    try (var inputs = loadInputs(config)) {
+      generate(config, inputs, out);
+    }
   }
 
   void generate(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {

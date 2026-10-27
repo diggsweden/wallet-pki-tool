@@ -6,16 +6,21 @@ package se.digg.wallet.pki.crypto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.KeyPair;
 import java.security.PrivateKey;
 import java.security.interfaces.ECPublicKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class EcKeyGeneratorTest {
 
@@ -40,6 +45,16 @@ class EcKeyGeneratorTest {
     ECPublicKey ecPublicKey = (ECPublicKey) keyPair.getPublic();
     assertThat(ecPublicKey.getAlgorithm()).isEqualTo("EC");
     assertThat(ecPublicKey.getParams().getCurve().getField().getFieldSize()).isEqualTo(256);
+  }
+
+  @Test
+  void successive_generations_produce_distinct_key_pairs() {
+    KeyPair first = keyGenerator.generateKeyPair();
+
+    KeyPair second = keyGenerator.generateKeyPair();
+
+    assertThat(second.getPublic().getEncoded()).isNotEqualTo(first.getPublic().getEncoded());
+    assertThat(second.getPrivate().getEncoded()).isNotEqualTo(first.getPrivate().getEncoded());
   }
 
   @Test
@@ -79,19 +94,23 @@ class EcKeyGeneratorTest {
         .isInstanceOf(PkiCryptoException.class);
   }
 
-  @Test
-  void shouldSetOwnerOnlyPermissionsOnPrivateKeyFile(@TempDir Path tempDir) throws IOException {
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void private_key_files_are_readable_by_container_users(boolean replacing,
+      @TempDir Path tempDir) throws IOException {
+    assumeTrue(Files.getFileAttributeView(tempDir, PosixFileAttributeView.class) != null);
     KeyPair keyPair = keyGenerator.generateKeyPair();
-    Path keyFile = tempDir.resolve("owner_only_key.pem");
+    Path keyFile = tempDir.resolve("private_key.pem");
+    if (replacing) {
+      Files.writeString(keyFile, "old key");
+      Files.setPosixFilePermissions(keyFile, PosixFilePermissions.fromString("rw-------"));
+    }
 
     keyGenerator.writePrivateKeyPem(keyPair.getPrivate(), keyFile);
 
-    if (java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
-      java.nio.file.attribute.PosixFilePermissions.fromString("rw-------");
-      java.util.Set<java.nio.file.attribute.PosixFilePermission> perms =
-          Files.getPosixFilePermissions(keyFile);
-      assertThat(java.nio.file.attribute.PosixFilePermissions.toString(perms))
-          .isEqualTo("rw-------");
-    }
+    assertThat(Files.getPosixFilePermissions(keyFile))
+        .isEqualTo(PosixFilePermissions.fromString("rw-r--r--"));
+    assertThat(keyGenerator.readPrivateKeyPem(keyFile).getEncoded())
+        .isEqualTo(keyPair.getPrivate().getEncoded());
   }
 }
