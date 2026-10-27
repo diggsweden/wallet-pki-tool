@@ -6,7 +6,7 @@ package se.digg.wallet.pki.application;
 
 import java.io.PrintWriter;
 import java.nio.file.Path;
-import java.security.SecureRandom;
+import java.security.KeyStore;
 import java.security.cert.Certificate;
 import se.digg.wallet.pki.config.PidIssuerConfig;
 import se.digg.wallet.pki.config.PkiConfiguration;
@@ -53,8 +53,7 @@ public final class PidIssuerFlow {
     var authority = inputs.authority();
     var organization = config.organization();
     var outputDirectory = Path.of(config.outputDirectory());
-    var certificates =
-        new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
+    var certificates = new CertificateProfileIssuer(config.caDistribution().baseUrl());
     var signingKey = keys.generateKeyPair();
     var signing = new SigningIdentity(signingKey,
         certificates.issuePidSigningCertificate(pidIssuer.signing().subject(organization),
@@ -88,7 +87,7 @@ public final class PidIssuerFlow {
     keystores.saveKeyStore(store, keystoreFile, password);
   }
 
-  private void addIdentity(java.security.KeyStore store, String alias, SigningIdentity identity,
+  private void addIdentity(KeyStore store, String alias, SigningIdentity identity,
       CertificateAuthority authority, char[] password) {
     keystores.addKeyEntry(store, alias, identity.keyPair().getPrivate(), password,
         new Certificate[] {identity.certificate(), authority.certificate()});

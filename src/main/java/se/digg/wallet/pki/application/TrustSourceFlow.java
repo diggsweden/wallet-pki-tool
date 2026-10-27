@@ -6,13 +6,9 @@ package se.digg.wallet.pki.application;
 
 import java.io.PrintWriter;
 import java.nio.file.Path;
-import java.security.SecureRandom;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import se.digg.wallet.pki.config.LoteConfig;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
@@ -30,8 +26,7 @@ import se.digg.wallet.pki.infrastructure.AuthorityStore;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 import se.digg.wallet.pki.trustlist.LoteAuthority;
 import se.digg.wallet.pki.trustlist.LoteGenerator;
-import se.digg.wallet.pki.trustlist.TrustListSigner;
-import tools.jackson.databind.json.JsonMapper;
+import se.digg.wallet.pki.trustlist.StatusListGenerator;
 
 /** A dedicated leaf signs both trust documents; participant CAs are only LoTE entries. */
 public final class TrustSourceFlow {
@@ -116,8 +111,7 @@ public final class TrustSourceFlow {
     var settings = config.trustSource().signer();
     var authority = inputs.authority();
     var outputDirectory = Path.of(config.outputDirectory());
-    var certificates =
-        new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
+    var certificates = new CertificateProfileIssuer(config.caDistribution().baseUrl());
     var key = new EcKeyGenerator().generateKeyPair();
     var subject = new CertificateSubject(settings.commonName(), config.organization(),
         SubjectAlternativeNames.empty());
@@ -141,18 +135,12 @@ public final class TrustSourceFlow {
 
   private void writeStatusList(PkiConfiguration config, SigningIdentity signer) {
     var distribution = config.caDistribution();
-    String url = distribution.baseUrl().replaceAll("/+$", "") + "/" + STATUS_LIST_PATH;
-    Instant issuedAt = Instant.now();
-    // The Bash generator's compressed bitset contains 8,192 valid entries.
-    String payload = JsonMapper.builder().build().writeValueAsString(Map.of(
-        "iss", url, "sub", url, "iat", issuedAt.getEpochSecond(),
-        "exp", issuedAt.plus(Duration.ofDays(config.trustSource().lote().validityDays()))
-            .getEpochSecond(),
-        "status_list", Map.of("bits", 1, "lst", "eJxjYBgFo2AUjFQAAAQAAAE")));
-    String token = new TrustListSigner().signJws(payload, signer.keyPair().getPrivate(),
-        signer.certificate(), "statuslist+jwt");
+    var url = distribution.baseUrl().replaceAll("/+$", "") + "/" + STATUS_LIST_PATH;
+    var generator = new StatusListGenerator();
+    var document = generator.buildStatusListDocument(url,
+        config.trustSource().lote().validityDays());
     writer.text(Path.of(config.outputDirectory()).resolve(distribution.directory())
-        .resolve(STATUS_LIST_PATH), token);
+        .resolve(STATUS_LIST_PATH), generator.sign(document, signer));
   }
 
   private SigningIdentity loadExistingSigner(PkiConfiguration config, char[] password) {

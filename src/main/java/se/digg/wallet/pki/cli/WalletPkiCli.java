@@ -28,7 +28,7 @@ import se.digg.wallet.pki.domain.AuthorityRole;
 @Command(name = "wallet-pki", mixinStandardHelpOptions = true,
     description = "Generate certificates and signed documents for explicit wallet roles.",
     subcommands = CommandLine.HelpCommand.class)
-public class WalletPkiCli {
+public final class WalletPkiCli {
   @Option(names = {"-c", "--config"}, required = true, scope = ScopeType.INHERIT,
       description = "Wallet YAML configuration; only the selected operation's roles are required.")
   private Path configuration;

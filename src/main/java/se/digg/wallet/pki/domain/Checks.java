@@ -6,7 +6,6 @@ package se.digg.wallet.pki.domain;
 
 import java.net.URI;
 import java.nio.file.Path;
-import java.util.List;
 
 /** Invariants shared by configuration and certificate value objects. */
 public final class Checks {
@@ -50,13 +49,5 @@ public final class Checks {
       throw new IllegalArgumentException(field + " must be positive");
     }
     return value;
-  }
-
-  public static List<String> texts(List<String> values, String field) {
-    if (values == null || values.isEmpty()) {
-      throw new IllegalArgumentException(field + " must not be empty");
-    }
-    values.forEach(value -> text(value, field));
-    return List.copyOf(values);
   }
 }

@@ -15,29 +15,18 @@ import java.util.Objects;
 public record CertificateAuthority(
     String id, KeyPair keyPair, X509Certificate certificate, X509CRL crl) {
 
-  /**
-   * Compact constructor validating required fields.
-   */
   public CertificateAuthority {
     Objects.requireNonNull(id, "id must not be null");
     Objects.requireNonNull(keyPair, "keyPair must not be null");
     Objects.requireNonNull(certificate, "certificate must not be null");
   }
 
-  /**
-   * Returns the private key of the CA key pair.
-   *
-   * @return the private key
-   */
+  /** Returns the private key of the CA key pair. */
   public PrivateKey privateKey() {
     return keyPair.getPrivate();
   }
 
-  /**
-   * Returns the public key of the CA key pair.
-   *
-   * @return the public key
-   */
+  /** Returns the public key of the CA key pair. */
   public PublicKey publicKey() {
     return keyPair.getPublic();
   }

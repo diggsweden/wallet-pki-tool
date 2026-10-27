@@ -16,7 +16,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Objects;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERSequence;
@@ -50,11 +49,10 @@ import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import se.digg.wallet.pki.domain.CertificateSubject;
+import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
-/**
- * Issues service certificates according to the configured profiles for the wallet ecosystem.
- */
+/** Issues service certificates according to the configured profiles for the wallet ecosystem. */
 public final class CertificateProfileIssuer {
 
   public static final String SIGNATURE_ALGORITHM = "SHA256withECDSA";
@@ -72,26 +70,19 @@ public final class CertificateProfileIssuer {
   public static final ASN1ObjectIdentifier OID_QC_TYPE_ESEAL =
       new ASN1ObjectIdentifier("0.4.0.1862.1.6.2");
 
-  private final SecureRandom secureRandom;
+  private final SecureRandom secureRandom = new SecureRandom();
   private final String caDistributionBaseUrl;
 
   public CertificateProfileIssuer() {
-    this(new SecureRandom(), "http://trust-source");
+    this("http://trust-source");
   }
 
-  public CertificateProfileIssuer(SecureRandom secureRandom) {
-    this(secureRandom, "http://trust-source");
+  public CertificateProfileIssuer(String caDistributionBaseUrl) {
+    this.caDistributionBaseUrl =
+        Checks.httpUrl(caDistributionBaseUrl, "caDistributionBaseUrl").replaceAll("/+$", "");
   }
 
-  public CertificateProfileIssuer(SecureRandom secureRandom, String caDistributionBaseUrl) {
-    this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom must not be null");
-    this.caDistributionBaseUrl = se.digg.wallet.pki.domain.Checks
-        .httpUrl(caDistributionBaseUrl, "caDistributionBaseUrl").replaceAll("/+$", "");
-  }
-
-  /**
-   * Functional interface for applying profile-specific X.509 extensions.
-   */
+  /** Functional interface for applying profile-specific X.509 extensions. */
   @FunctionalInterface
   private interface ExtensionApplier {
     void apply(X509v3CertificateBuilder builder) throws IOException;
@@ -116,11 +107,10 @@ public final class CertificateProfileIssuer {
         buildSubjectDn(certificateSubject);
     String caName = signingCa.id();
 
-    return issueCertificateInternal(
+    return issueCertificate(
         subject,
         subjectPublicKey,
         signingCa,
-        DEFAULT_CERT_VALIDITY,
         builder -> {
           builder.addExtension(
               Extension.keyUsage, true,
@@ -145,11 +135,10 @@ public final class CertificateProfileIssuer {
         buildSubjectDn(certificateSubject);
     String caName = signingCa.id();
 
-    return issueCertificateInternal(
+    return issueCertificate(
         subject,
         subjectPublicKey,
         signingCa,
-        DEFAULT_CERT_VALIDITY,
         builder -> {
           builder.addExtension(
               Extension.keyUsage, true,
@@ -167,11 +156,10 @@ public final class CertificateProfileIssuer {
         buildSubjectDn(certificateSubject);
     String caName = signingCa.id();
 
-    return issueCertificateInternal(
+    return issueCertificate(
         subject,
         subjectPublicKey,
         signingCa,
-        DEFAULT_CERT_VALIDITY,
         builder -> {
           builder.addExtension(
               Extension.keyUsage, true,
@@ -203,11 +191,10 @@ public final class CertificateProfileIssuer {
       CertificateAuthority signingCa) {
     X500Name subject = buildSubjectDn(certificateSubject);
 
-    return issueCertificateInternal(
+    return issueCertificate(
         subject,
         subjectPublicKey,
         signingCa,
-        DEFAULT_CERT_VALIDITY,
         builder -> {
           builder.addExtension(
               Extension.keyUsage, true,
@@ -231,11 +218,10 @@ public final class CertificateProfileIssuer {
       CertificateAuthority signingCa) {
     X500Name subject = buildSubjectDn(certificateSubject);
 
-    return issueCertificateInternal(
+    return issueCertificate(
         subject,
         subjectPublicKey,
         signingCa,
-        DEFAULT_CERT_VALIDITY,
         builder -> {
           builder.addExtension(
               Extension.keyUsage,
@@ -253,15 +239,14 @@ public final class CertificateProfileIssuer {
         });
   }
 
-  private X509Certificate issueCertificateInternal(
+  private X509Certificate issueCertificate(
       X500Name subject,
       PublicKey subjectPublicKey,
       CertificateAuthority signingCa,
-      Duration validity,
       ExtensionApplier extensionApplier) {
     try {
       X509v3CertificateBuilder builder =
-          createBaseBuilder(subject, subjectPublicKey, signingCa, validity);
+          createBaseBuilder(subject, subjectPublicKey, signingCa);
       JcaX509ExtensionUtils extUtils = new JcaX509ExtensionUtils();
 
       // Common extensions for all end-entity certificates
@@ -274,9 +259,7 @@ public final class CertificateProfileIssuer {
           false,
           extUtils.createAuthorityKeyIdentifier(signingCa.publicKey()));
 
-      if (extensionApplier != null) {
-        extensionApplier.apply(builder);
-      }
+      extensionApplier.apply(builder);
 
       return signAndConvert(builder, signingCa);
     } catch (IOException | NoSuchAlgorithmException | OperatorCreationException
@@ -297,14 +280,13 @@ public final class CertificateProfileIssuer {
   private X509v3CertificateBuilder createBaseBuilder(
       X500Name subject,
       PublicKey subjectPublicKey,
-      CertificateAuthority signingCa,
-      Duration validity) {
+      CertificateAuthority signingCa) {
     X500Name issuer =
         X500Name.getInstance(signingCa.certificate().getSubjectX500Principal().getEncoded());
     BigInteger serialNumber = new BigInteger(64, secureRandom).abs().add(BigInteger.ONE);
     Instant now = Instant.now().minus(Duration.ofMinutes(5));
     Date notBefore = Date.from(now);
-    Date notAfter = Date.from(now.plus(validity));
+    Date notAfter = Date.from(now.plus(DEFAULT_CERT_VALIDITY));
 
     return new JcaX509v3CertificateBuilder(
         issuer, serialNumber, notBefore, notAfter, subject, subjectPublicKey);

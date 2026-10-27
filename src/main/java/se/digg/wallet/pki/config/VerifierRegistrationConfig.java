@@ -25,13 +25,16 @@ public record VerifierRegistrationConfig(String jwtFile, String environmentFile,
     if (description.isEmpty() || purpose.isEmpty()) {
       throw new IllegalArgumentException("Registration description and purpose must not be empty");
     }
-    requestedPidClaims =
-        List.copyOf(Checks.texts(requestedPidClaims, "registration.requestedPidClaims"));
+    if (requestedPidClaims == null || requestedPidClaims.isEmpty()) {
+      throw new IllegalArgumentException("registration.requestedPidClaims must not be empty");
+    }
     for (String claim : requestedPidClaims) {
+      Checks.text(claim, "registration.requestedPidClaims");
       if (!claim.matches("[a-z_]+(\\.[a-z_]+)*")) {
         throw new IllegalArgumentException("Invalid PID claim path: " + claim);
       }
     }
+    requestedPidClaims = List.copyOf(requestedPidClaims);
     Checks.required(supervisoryAuthority, "registration.supervisoryAuthority");
     Checks.positive(validityDays, "registration.validityDays");
   }

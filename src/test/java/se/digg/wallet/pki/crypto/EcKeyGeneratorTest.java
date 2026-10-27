@@ -16,7 +16,6 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.security.KeyPair;
 import java.security.PrivateKey;
 import java.security.interfaces.ECPublicKey;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -24,22 +23,12 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class EcKeyGeneratorTest {
 
-  private EcKeyGenerator keyGenerator;
-
-  @BeforeEach
-  void setUp() {
-    keyGenerator = new EcKeyGenerator();
-  }
+  private final EcKeyGenerator keyGenerator = new EcKeyGenerator();
 
   @Test
-  void shouldGenerateValidEcP256KeyPair() {
-    // 1. Generate EC key pair
+  void generated_keys_use_the_p256_curve() {
     KeyPair keyPair = keyGenerator.generateKeyPair();
 
-    // 2. Verify EC P-256 (secp256r1) key attributes
-    assertThat(keyPair).isNotNull();
-    assertThat(keyPair.getPrivate()).isNotNull();
-    assertThat(keyPair.getPublic()).isNotNull();
     assertThat(keyPair.getPublic()).isInstanceOf(ECPublicKey.class);
 
     ECPublicKey ecPublicKey = (ECPublicKey) keyPair.getPublic();
@@ -58,8 +47,7 @@ class EcKeyGeneratorTest {
   }
 
   @Test
-  void shouldConvertKeyToPemAndParseBack(@TempDir Path tempDir) throws IOException {
-    // 1. Generate key pair and save private key as PEM file
+  void private_keys_survive_pem_file_round_trips(@TempDir Path tempDir) throws IOException {
     KeyPair keyPair = keyGenerator.generateKeyPair();
     Path keyFile = tempDir.resolve("private_key.pem");
 
@@ -69,15 +57,12 @@ class EcKeyGeneratorTest {
     String pemContent = Files.readString(keyFile);
     assertThat(pemContent).contains("-----BEGIN");
 
-    // 2. Read back private key from PEM file and verify equality
     PrivateKey restoredKey = keyGenerator.readPrivateKeyPem(keyFile);
-    assertThat(restoredKey).isNotNull();
     assertThat(restoredKey.getEncoded()).isEqualTo(keyPair.getPrivate().getEncoded());
   }
 
   @Test
-  void shouldThrowWhenReadingNonExistentFile(@TempDir Path tempDir) {
-    // Verify exception when private key file is missing
+  void missing_private_key_files_report_the_path(@TempDir Path tempDir) {
     Path nonExistent = tempDir.resolve("does-not-exist.pem");
 
     assertThatThrownBy(() -> keyGenerator.readPrivateKeyPem(nonExistent))
@@ -86,8 +71,7 @@ class EcKeyGeneratorTest {
   }
 
   @Test
-  void shouldThrowWhenParsingInvalidPem() {
-    // Verify exception when PEM format is corrupt or invalid
+  void malformed_private_keys_are_rejected() {
     String invalidContent = "THIS IS NOT A PEM FILE";
 
     assertThatThrownBy(() -> keyGenerator.readPrivateKeyPem(invalidContent))

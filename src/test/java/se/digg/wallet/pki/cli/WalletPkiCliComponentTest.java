@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static se.digg.wallet.pki.support.EcosystemFixture.snapshot;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSObject;
@@ -22,13 +23,15 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.function.Function;
+import java.util.stream.Stream;
 import java.util.zip.InflaterInputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import se.digg.wallet.pki.config.ConfigurationLoader;
 import se.digg.wallet.pki.config.SecretResolver;
@@ -74,7 +77,7 @@ class WalletPkiCliComponentTest {
 
     assertThat(cli(name -> null).execute(arguments.toArray(String[]::new))).isZero();
 
-    assertThat(out.toString()).contains("Usage:", "--config", "Requires", "require");
+    assertThat(out.toString()).contains("Usage:", "--config").containsIgnoringCase("require");
     assertThat(err.toString()).isEmpty();
     assertThat(directory).isEmptyDirectory();
   }
@@ -190,21 +193,7 @@ class WalletPkiCliComponentTest {
   }
 
   @ParameterizedTest
-  @CsvSource({
-      "pidIssuer, pid-issuer, PID_ISSUER_KEYSTORE_PASSWORD, "
-          + "certificates/issuer/pid_issuer.p12, pid_issuer",
-      "walletAttestationIssuer, wallet-attestation-issuer, "
-          + "WALLET_ATTESTATION_ISSUER_KEYSTORE_PASSWORD, certificates/"
-          + "wallet-attestation-issuer/wallet_attestation_issuer.p12, "
-          + "wallet_attestation_issuer",
-      "verifier.access, verifier access, "
-          + "VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD, certificates/"
-          + "verifier-access-certificate/verifier-access-certificate.p12, "
-          + "verifier_access_certificate",
-      "verifier.registration, verifier registration, "
-          + "VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD, "
-          + "certificates/verifier-registration-certificate/"
-          + "verifier-registration-certificate.p12, registration"})
+  @MethodSource("participants")
   void participant_generation_requires_only_its_own_role_and_password(String section,
       String command, String passwordName, String keystore, String alias) throws Exception {
     Path file = configuration(section);
@@ -295,6 +284,11 @@ class WalletPkiCliComponentTest {
         .getCertificate("trust_source").getPublicKey();
     assertThat(current).isNotEqualTo(previous);
     assertTrustDocumentsSignedBy(current);
+    for (String document : List.of("trusted-entities.json", "status-list.jwt")) {
+      String token = Files.readString(directory.resolve("config/trust-source/signed")
+          .resolve(document));
+      assertThat(new TrustListSigner().verifyJws(token, previous)).as(document).isFalse();
+    }
     var after = snapshot(directory.resolve("config"));
     for (String path : List.of("certificates/trust-list-signer/trust_source.p12",
         "certificates/trust-list-signer/trust_source_cert.pem",
@@ -604,7 +598,25 @@ class WalletPkiCliComponentTest {
     assertThat(err.toString()).contains("Configuration file not found");
   }
 
-  private WalletPkiCli cli(java.util.function.Function<String, String> passwords) {
+  private static Stream<Arguments> participants() {
+    return Stream.of(
+        Arguments.of("pidIssuer", "pid-issuer", "PID_ISSUER_KEYSTORE_PASSWORD",
+            "certificates/issuer/pid_issuer.p12", "pid_issuer"),
+        Arguments.of("walletAttestationIssuer", "wallet-attestation-issuer",
+            "WALLET_ATTESTATION_ISSUER_KEYSTORE_PASSWORD",
+            "certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12",
+            "wallet_attestation_issuer"),
+        Arguments.of("verifier.access", "verifier access",
+            "VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD",
+            "certificates/verifier-access-certificate/verifier-access-certificate.p12",
+            "verifier_access_certificate"),
+        Arguments.of("verifier.registration", "verifier registration",
+            "VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD",
+            "certificates/verifier-registration-certificate/verifier-registration-certificate.p12",
+            "registration"));
+  }
+
+  private WalletPkiCli cli(Function<String, String> passwords) {
     return new WalletPkiCli(new ConfigurationLoader(), new SecretResolver(passwords),
         new PrintWriter(out), new PrintWriter(err));
   }
@@ -669,16 +681,5 @@ class WalletPkiCliComponentTest {
     var token = JWSObject.parse(Files.readString(
         directory.resolve("config/trust-source/signed/trusted-entities.json")));
     return yaml.readTree(token.getPayload().toString()).at("/LoTE/TrustedEntitiesList");
-  }
-
-  private Map<String, String> snapshot(Path root) throws Exception {
-    Map<String, String> files = new TreeMap<>();
-    try (var paths = Files.walk(root)) {
-      for (Path path : paths.filter(Files::isRegularFile).toList()) {
-        files.put(root.relativize(path).toString(),
-            Base64.getEncoder().encodeToString(Files.readAllBytes(path)));
-      }
-    }
-    return files;
   }
 }

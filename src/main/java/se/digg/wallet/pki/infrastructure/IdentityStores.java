@@ -38,13 +38,13 @@ public final class IdentityStores {
       }
       certificate.checkValidity();
       certificate.verify(authority.getPublicKey());
-      new CertificateAuthorityManager()
-          .validateKeyPair(new KeyPair(certificate.getPublicKey(), key), certificate);
+      var keyPair = new KeyPair(certificate.getPublicKey(), key);
+      new CertificateAuthorityManager().validateKeyPair(keyPair, certificate);
       boolean[] usage = certificate.getKeyUsage();
       if (usage == null || !usage[0]) {
         throw new PkiCryptoException("Trust signer lacks digitalSignature usage");
       }
-      return new SigningIdentity(new KeyPair(certificate.getPublicKey(), key), certificate);
+      return new SigningIdentity(keyPair, certificate);
     } catch (java.security.GeneralSecurityException e) {
       throw new PkiCryptoException("Cannot load trust-source signing identity: " + file, e);
     }

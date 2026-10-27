@@ -8,9 +8,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.cert.X509Certificate;
-import java.util.Arrays;
+import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.style.BCStyle;
+import org.bouncycastle.asn1.x500.style.IETFUtils;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.PkiConfigurationException;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
@@ -67,8 +68,8 @@ public final class AuthorityStore {
   }
 
   private boolean hasMaterial(AuthorityRole role) {
-    return Arrays.asList(keyPath(role), certificatePath(role), crlPath(role))
-        .stream().anyMatch(Files::exists);
+    return Files.exists(keyPath(role)) || Files.exists(certificatePath(role))
+        || Files.exists(crlPath(role));
   }
 
   public CertificateAuthority load(AuthorityRole role) {
@@ -98,10 +99,10 @@ public final class AuthorityStore {
     return certificate;
   }
 
-  private String attribute(X500Name subject, org.bouncycastle.asn1.ASN1ObjectIdentifier type) {
+  private String attribute(X500Name subject, ASN1ObjectIdentifier type) {
     var values = subject.getRDNs(type);
     return values.length == 1
-        ? org.bouncycastle.asn1.x500.style.IETFUtils.valueToString(values[0].getFirst().getValue())
+        ? IETFUtils.valueToString(values[0].getFirst().getValue())
         : "";
   }
 
