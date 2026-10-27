@@ -18,7 +18,6 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
-import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.Security;
 import java.security.spec.ECGenParameterSpec;
@@ -43,51 +42,23 @@ public class EcKeyGenerator {
     }
   }
 
-  private final SecureRandom secureRandom;
+  private final SecureRandom secureRandom = new SecureRandom();
 
-  /** Default constructor with an independent SecureRandom instance. */
-  public EcKeyGenerator() {
-    this.secureRandom = new SecureRandom();
-  }
-
-  /**
-   * Generates a new EC P-256 (secp256r1) key pair.
-   *
-   * @return newly generated KeyPair
-   * @throws PkiCryptoException if key generation fails
-   */
   public KeyPair generateKeyPair() {
-    return generateKeyPair(DEFAULT_CURVE);
-  }
-
-  /**
-   * Generates a new EC key pair for the specified curve name.
-   *
-   * @param curveName the EC curve name (e.g. "secp256r1" or "prime256v1")
-   * @return newly generated KeyPair
-   * @throws PkiCryptoException if key generation fails
-   */
-  public KeyPair generateKeyPair(String curveName) {
     try {
       KeyPairGenerator keyGen =
           KeyPairGenerator.getInstance("EC", BouncyCastleProvider.PROVIDER_NAME);
-      ECGenParameterSpec ecSpec = new ECGenParameterSpec(curveName);
+      ECGenParameterSpec ecSpec = new ECGenParameterSpec(DEFAULT_CURVE);
       keyGen.initialize(ecSpec, secureRandom);
       return keyGen.generateKeyPair();
     } catch (NoSuchAlgorithmException
         | NoSuchProviderException
         | InvalidAlgorithmParameterException e) {
-      throw new PkiCryptoException("Failed to generate EC key pair for curve: " + curveName, e);
+      throw new PkiCryptoException("Failed to generate EC key pair for curve: " + DEFAULT_CURVE, e);
     }
   }
 
-  /**
-   * Encodes a cryptographic object (e.g. PrivateKey, PublicKey, Certificate) to PEM string.
-   *
-   * @param object the object to encode
-   * @return PEM formatted string
-   * @throws PkiCryptoException if encoding fails
-   */
+  /** Encodes a cryptographic object (e.g. PrivateKey, PublicKey, Certificate) to PEM string. */
   public String toPemString(Object object) {
     try (StringWriter sw = new StringWriter();
         JcaPEMWriter pemWriter = new JcaPEMWriter(sw)) {
@@ -99,13 +70,7 @@ public class EcKeyGenerator {
     }
   }
 
-  /**
-   * Writes a private key to disk in PEM format with mode 0644 on POSIX filesystems.
-   *
-   * @param privateKey the private key
-   * @param outputPath the destination file path
-   * @throws PkiCryptoException if writing fails
-   */
+  /** Writes a private key to disk in PEM format with mode 0644 on POSIX filesystems. */
   public void writePrivateKeyPem(PrivateKey privateKey, Path outputPath) {
     try {
       Path parent = outputPath.getParent();
@@ -123,23 +88,7 @@ public class EcKeyGenerator {
     }
   }
 
-  /**
-   * Writes a public key to disk in PEM format.
-   *
-   * @param publicKey the public key
-   * @param outputPath the destination file path
-   * @throws PkiCryptoException if writing fails
-   */
-  public void writePublicKeyPem(PublicKey publicKey, Path outputPath) {
-    writePemFile(publicKey, outputPath);
-  }
-
-  /**
-   * Writes any PEM-encodable object to disk.
-   *
-   * @param object the object to write
-   * @param outputPath the destination file path
-   */
+  /** Writes any PEM-encodable object to disk. */
   public void writePemFile(Object object, Path outputPath) {
     try {
       Path parent = outputPath.getParent();
@@ -153,13 +102,7 @@ public class EcKeyGenerator {
     }
   }
 
-  /**
-   * Reads a private key from a PEM file on disk.
-   *
-   * @param inputPath the path to the PEM file
-   * @return the parsed PrivateKey
-   * @throws PkiCryptoException if reading or parsing fails
-   */
+  /** Reads a private key from a PEM file on disk. */
   public PrivateKey readPrivateKeyPem(Path inputPath) {
     try {
       if (!Files.exists(inputPath)) {
@@ -172,13 +115,7 @@ public class EcKeyGenerator {
     }
   }
 
-  /**
-   * Reads a private key from a PEM string.
-   *
-   * @param pemContent the PEM string content
-   * @return the parsed PrivateKey
-   * @throws PkiCryptoException if parsing fails
-   */
+  /** Reads a private key from a PEM string. */
   public PrivateKey readPrivateKeyPem(String pemContent) {
     try (PEMParser parser = new PEMParser(new StringReader(pemContent))) {
       Object parsed = parser.readObject();

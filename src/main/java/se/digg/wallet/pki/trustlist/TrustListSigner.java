@@ -41,11 +41,6 @@ public class TrustListSigner {
   /**
    * Signs a JSON payload as a compact JWS with ES256, embedded X.509 certificate chain, and default
    * 'trustlist+jwt' typ header according to ETSI TS 119 602.
-   *
-   * @param jsonPayload the JSON payload string to sign
-   * @param privateKey the private key for ES256 signing
-   * @param signingCert the X.509 certificate to embed in the x5c header
-   * @return compact JWS string (header.payload.signature)
    */
   public String signJws(String jsonPayload, PrivateKey privateKey, X509Certificate signingCert) {
     return signJws(jsonPayload, privateKey, signingCert, TYPE_TRUSTLIST_JWT);
@@ -54,12 +49,6 @@ public class TrustListSigner {
   /**
    * Signs a JSON payload as a compact JWS with ES256, embedded X.509 certificate chain, and custom
    * typ header.
-   *
-   * @param jsonPayload the JSON payload string to sign
-   * @param privateKey the private key for ES256 signing
-   * @param signingCert the X.509 certificate to embed in the x5c header
-   * @param type the typ header value (e.g. 'trustlist+jwt' or 'statuslist+jwt')
-   * @return compact JWS string
    */
   public String signJws(
       String jsonPayload, PrivateKey privateKey, X509Certificate signingCert, String type) {
@@ -70,12 +59,6 @@ public class TrustListSigner {
   /**
    * Signs a JSON payload as a compact JWS with ES256, embedded X.509 certificate chain, and custom
    * typ header.
-   *
-   * @param jsonPayload the JSON payload string to sign
-   * @param privateKey the private key for ES256 signing
-   * @param certChain the X.509 certificate chain to embed in the x5c header
-   * @param type the typ header value (e.g. 'trustlist+jwt' or 'statuslist+jwt')
-   * @return compact JWS string
    */
   public String signJws(
       String jsonPayload, PrivateKey privateKey, List<X509Certificate> certChain, String type) {
@@ -106,13 +89,7 @@ public class TrustListSigner {
     }
   }
 
-  /**
-   * Verifies the cryptographic signature of a compact JWS token against a public key.
-   *
-   * @param compactJws the compact JWS token string
-   * @param publicKey the public key to verify against
-   * @return true if the signature is valid, false otherwise
-   */
+  /** Verifies the cryptographic signature of a compact JWS token against a public key. */
   public boolean verifyJws(String compactJws, PublicKey publicKey) {
     Objects.requireNonNull(compactJws, "compactJws must not be null");
     Objects.requireNonNull(publicKey, "publicKey must not be null");
@@ -151,27 +128,6 @@ public class TrustListSigner {
           .generatePublic(new X509EncodedKeySpec(publicKey.getEncoded()));
     } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
       throw new PkiCryptoException("Failed to convert public key to ECPublicKey", e);
-    }
-  }
-
-  /**
-   * Parses a compact JWS token and extracts the signing X.509 certificate from the x5c header.
-   *
-   * @param compactJws the compact JWS token string
-   * @return Base64-encoded X.509 certificate string from header
-   */
-  public String extractCertificateBase64(String compactJws) {
-    Objects.requireNonNull(compactJws, "compactJws must not be null");
-
-    try {
-      JWSObject jwsObject = JWSObject.parse(compactJws);
-      List<Base64> x5c = jwsObject.getHeader().getX509CertChain();
-      if (x5c == null || x5c.isEmpty()) {
-        throw new PkiCryptoException("JWS header contains no x5c certificate chain");
-      }
-      return x5c.get(0).toString();
-    } catch (ParseException e) {
-      throw new PkiCryptoException("Failed to parse JWS header", e);
     }
   }
 }

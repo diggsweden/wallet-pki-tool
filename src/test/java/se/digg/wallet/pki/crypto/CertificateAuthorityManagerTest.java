@@ -46,7 +46,7 @@ class CertificateAuthorityManagerTest {
   void mismatched_authority_private_keys_are_rejected() {
     var first = manager.createAuthority("first", "First");
     var second = manager.createAuthority("second", "Second");
-    assertThatThrownBy(() -> manager.validateAuthority(
+    assertThatThrownBy(() -> manager.validateKeyPair(
         new java.security.KeyPair(first.publicKey(), second.privateKey()), first.certificate()))
         .hasMessageContaining("Private key does not match");
   }

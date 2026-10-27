@@ -21,21 +21,12 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Objects;
 
-/**
- * Manages creation, modification, and persistence of PKCS#12 (.p12) keystores and truststores.
- */
+/** Manages creation, modification, and persistence of PKCS#12 (.p12) keystores and truststores. */
 public class KeystoreManager {
 
   private static final String KEYSTORE_TYPE_PKCS12 = "PKCS12";
 
-  /** Default constructor. */
-  public KeystoreManager() {}
-
-  /**
-   * Creates a new empty PKCS#12 KeyStore in memory.
-   *
-   * @return initialized KeyStore instance
-   */
+  /** Creates a new empty PKCS#12 KeyStore in memory. */
   public KeyStore createPkcs12KeyStore() {
     try {
       KeyStore keyStore = KeyStore.getInstance(KEYSTORE_TYPE_PKCS12);
@@ -46,15 +37,7 @@ public class KeystoreManager {
     }
   }
 
-  /**
-   * Adds a private key and certificate chain to the keystore.
-   *
-   * @param keyStore the keystore to modify
-   * @param alias alias name for the entry
-   * @param privateKey private key
-   * @param password entry protection password (or empty/keystore password)
-   * @param certificateChain certificate chain (leaf certificate followed by CA certificates)
-   */
+  /** Adds a private key and certificate chain to the keystore. */
   public void addKeyEntry(
       KeyStore keyStore,
       String alias,
@@ -75,13 +58,7 @@ public class KeystoreManager {
     }
   }
 
-  /**
-   * Adds a trusted certificate entry to the keystore (for truststore creation).
-   *
-   * @param keyStore the keystore to modify
-   * @param alias alias name for the certificate entry
-   * @param certificate trusted certificate
-   */
+  /** Adds a trusted certificate entry to the keystore (for truststore creation). */
   public void addCertificateEntry(KeyStore keyStore, String alias, Certificate certificate) {
     Objects.requireNonNull(keyStore, "keyStore must not be null");
     Objects.requireNonNull(alias, "alias must not be null");
@@ -94,16 +71,7 @@ public class KeystoreManager {
     }
   }
 
-  /**
-   * Creates a PKCS#12 keystore containing a single service certificate and CA chain.
-   *
-   * @param alias entry alias name
-   * @param serviceKey service private key
-   * @param serviceCert service certificate
-   * @param caCert issuing CA certificate
-   * @param password keystore password
-   * @return populated KeyStore
-   */
+  /** Creates a PKCS#12 keystore containing a single service certificate and CA chain. */
   public KeyStore createSingleKeyStore(
       String alias,
       PrivateKey serviceKey,
@@ -121,10 +89,6 @@ public class KeystoreManager {
   /**
    * Saves the KeyStore atomically with mode 0644 on POSIX filesystems, creating parent directories
    * if needed.
-   *
-   * @param keyStore the KeyStore to save
-   * @param outputPath path to the destination .p12 file
-   * @param password keystore password
    */
   public void saveKeyStore(KeyStore keyStore, Path outputPath, char[] password) {
     Objects.requireNonNull(keyStore, "keyStore must not be null");
@@ -162,13 +126,7 @@ public class KeystoreManager {
     }
   }
 
-  /**
-   * Loads an existing PKCS#12 KeyStore from disk.
-   *
-   * @param keystorePath path to the .p12 file
-   * @param password keystore password
-   * @return loaded KeyStore
-   */
+  /** Loads an existing PKCS#12 KeyStore from disk. */
   public KeyStore loadKeyStore(Path keystorePath, char[] password) {
     Objects.requireNonNull(keystorePath, "keystorePath must not be null");
 

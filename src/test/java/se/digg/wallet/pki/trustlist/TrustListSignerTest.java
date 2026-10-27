@@ -7,84 +7,64 @@ package se.digg.wallet.pki.trustlist;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSObject;
-import java.security.KeyPair;
-import org.junit.jupiter.api.BeforeEach;
+import java.util.Base64;
 import org.junit.jupiter.api.Test;
-import se.digg.wallet.pki.crypto.CertificateAuthority;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
 
 class TrustListSignerTest {
-
-  private TrustListSigner signer;
-  private CertificateAuthorityManager caManager;
-  private EcKeyGenerator keyGenerator;
-
-  @BeforeEach
-  void setUp() {
-    signer = new TrustListSigner();
-    caManager = new CertificateAuthorityManager();
-    keyGenerator = new EcKeyGenerator();
-  }
+  private final TrustListSigner signer = new TrustListSigner();
+  private final EcKeyGenerator keys = new EcKeyGenerator();
 
   @Test
-  void shouldSignAndVerifyJwsWithTrustlistJwtType() throws Exception {
-    // 1. Setup Trust Source CA
-    CertificateAuthority trustSourceCa =
-        caManager.createAuthority("trust-source-ca", "DIGG Wallet Trust Source CA");
+  void signed_tokens_preserve_the_payload_and_identify_the_signing_certificate() throws Exception {
+    var authority = new CertificateAuthorityManager().createAuthority("trust-source", "Test CA");
+    String payload = "{\"message\":\"test-lote-payload\"}";
 
-    String samplePayload = "{\"message\":\"test-lote-payload\"}";
+    String token = signer.signJws(payload, authority.privateKey(), authority.certificate());
 
-    // 2. Sign payload as compact JWS (default typ: trustlist+jwt)
-    String compactJws =
-        signer.signJws(
-            samplePayload,
-            trustSourceCa.privateKey(),
-            trustSourceCa.certificate());
-
-    assertThat(compactJws).isNotNull();
-    assertThat(compactJws.split("\\.")).hasSize(3);
-
-    // 3. Extract and verify typ and x5c certificate from header
-    JWSObject parsed = JWSObject.parse(compactJws);
-    assertThat(parsed.getHeader().getType()).isNotNull();
+    var parsed = JWSObject.parse(token);
+    assertThat(parsed.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.ES256);
     assertThat(parsed.getHeader().getType().toString()).isEqualTo("trustlist+jwt");
-
-    String certB64 = signer.extractCertificateBase64(compactJws);
-    assertThat(certB64).isNotEmpty();
-
-    // 4. Verify cryptographic signature with signer's public key
-    boolean isValid = signer.verifyJws(compactJws, trustSourceCa.publicKey());
-    assertThat(isValid).isTrue();
-
-    // Verify JWS payload matches original string
-    assertThat(parsed.getPayload().toString()).isEqualTo(samplePayload);
+    assertThat(parsed.getHeader().getX509CertChain()).hasSize(1);
+    assertThat(parsed.getHeader().getX509CertChain().getFirst().decode())
+        .isEqualTo(authority.certificate().getEncoded());
+    assertThat(parsed.getPayload().toString()).isEqualTo(payload);
+    assertThat(signer.verifyJws(token, authority.publicKey())).isTrue();
   }
 
   @Test
-  void shouldRejectTamperedSignature() {
-    // 1. Setup two different CAs
-    CertificateAuthority ca1 = caManager.createAuthority("ca-1", "CA One");
-    CertificateAuthority ca2 = caManager.createAuthority("ca-2", "CA Two");
+  void signatures_are_rejected_with_unrelated_public_keys() {
+    var authority = new CertificateAuthorityManager().createAuthority("trust-source", "Test CA");
+    String token = signer.signJws("{}", authority.privateKey(), authority.certificate());
 
-    String samplePayload = "{\"message\":\"hello\"}";
+    assertThat(signer.verifyJws(token, keys.generateKeyPair().getPublic())).isFalse();
+  }
 
-    // 2. Sign with ca1
-    String compactJws =
-        signer.signJws(samplePayload, ca1.privateKey(), ca1.certificate());
+  @ParameterizedTest
+  @ValueSource(ints = {1, 2})
+  void modified_payloads_or_signatures_fail_verification(int segment) {
+    var authority = new CertificateAuthorityManager().createAuthority("trust-source", "Test CA");
+    String token = signer.signJws("{\"message\":\"original\"}",
+        authority.privateKey(), authority.certificate());
+    String[] parts = token.split("\\.");
+    byte[] bytes = Base64.getUrlDecoder().decode(parts[segment]);
+    bytes[0] ^= 1;
+    parts[segment] = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 
-    // 3. Verify against ca2's public key (must fail)
-    boolean isValid = signer.verifyJws(compactJws, ca2.publicKey());
-    assertThat(isValid).isFalse();
+    assertThat(signer.verifyJws(String.join(".", parts), authority.publicKey())).isFalse();
   }
 
   @Test
-  void shouldThrowWhenParsingInvalidJws() {
-    KeyPair keyPair = keyGenerator.generateKeyPair();
+  void malformed_tokens_report_parse_errors() {
+    var key = keys.generateKeyPair().getPublic();
 
-    assertThatThrownBy(() -> signer.verifyJws("not-a-valid-jws-token", keyPair.getPublic()))
+    assertThatThrownBy(() -> signer.verifyJws("not-a-valid-jws-token", key))
         .isInstanceOf(PkiCryptoException.class)
         .hasMessageContaining("Failed to verify JWS token");
   }

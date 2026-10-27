@@ -6,7 +6,6 @@ package se.digg.wallet.pki.application;
 
 import java.io.PrintWriter;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
 import se.digg.wallet.pki.config.VerifierConfig;
@@ -61,8 +60,7 @@ public final class VerifierFlow {
   void generateAccess(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {
     var access = config.verifier().access();
     var authority = inputs.authority();
-    var certificates =
-        new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
+    var certificates = new CertificateProfileIssuer(config.caDistribution().baseUrl());
     var key = keys.generateKeyPair();
     var subject = new CertificateSubject(access.commonName(), config.organization(),
         access.subjectAlternativeNames());
@@ -85,8 +83,7 @@ public final class VerifierFlow {
     var registration = config.verifier().registration();
     var authority = inputs.authority();
     var outputDirectory = Path.of(config.outputDirectory());
-    var certificates =
-        new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
+    var certificates = new CertificateProfileIssuer(config.caDistribution().baseUrl());
     var key = keys.generateKeyPair();
     var subject = new CertificateSubject(registration.commonName(), config.organization(),
         SubjectAlternativeNames.empty());

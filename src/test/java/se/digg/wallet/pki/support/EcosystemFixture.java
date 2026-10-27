@@ -6,10 +6,13 @@ package se.digg.wallet.pki.support;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.io.StringWriter;
+import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.EnumSet;
+import java.util.Map;
+import java.util.TreeMap;
 import se.digg.wallet.pki.application.AuthorityProvisioner;
 import se.digg.wallet.pki.application.WalletServicesPkiGenerator;
 import se.digg.wallet.pki.config.ConfigurationLoader;
@@ -46,6 +49,17 @@ public final class EcosystemFixture {
   }
 
   public static PrintWriter quiet() {
-    return new PrintWriter(new StringWriter());
+    return new PrintWriter(Writer.nullWriter());
+  }
+
+  public static Map<String, String> snapshot(Path root) throws IOException {
+    Map<String, String> files = new TreeMap<>();
+    try (var paths = Files.walk(root)) {
+      for (Path path : paths.filter(Files::isRegularFile).toList()) {
+        files.put(root.relativize(path).toString(),
+            Base64.getEncoder().encodeToString(Files.readAllBytes(path)));
+      }
+    }
+    return files;
   }
 }

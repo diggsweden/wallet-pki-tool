@@ -23,7 +23,6 @@ import java.security.interfaces.ECPublicKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
-import java.util.Objects;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.X500NameBuilder;
 import org.bouncycastle.asn1.x500.style.BCStyle;
@@ -60,32 +59,12 @@ public final class CertificateAuthorityManager {
   public static final String CA_KEY_FILENAME = "ca_private_key.pem";
   public static final String CRL_FILENAME = "revocation-list.pem";
 
-  private final EcKeyGenerator keyGenerator;
-  private final SecureRandom secureRandom;
-
-  /** Default constructor. */
-  public CertificateAuthorityManager() {
-    this(new EcKeyGenerator(), new SecureRandom());
-  }
-
-  /**
-   * Constructor with explicit dependencies.
-   *
-   * @param keyGenerator the EC key generator
-   * @param secureRandom the secure random generator
-   */
-  public CertificateAuthorityManager(EcKeyGenerator keyGenerator, SecureRandom secureRandom) {
-    this.keyGenerator = Objects.requireNonNull(keyGenerator, "keyGenerator must not be null");
-    this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom must not be null");
-  }
+  private final EcKeyGenerator keyGenerator = new EcKeyGenerator();
+  private final SecureRandom secureRandom = new SecureRandom();
 
   /**
    * Creates a new Root Certificate Authority with generated key pair, self-signed cert, and empty
    * CRL.
-   *
-   * @param id authority unique identifier
-   * @param commonName the Subject Common Name (CN)
-   * @return the newly created CertificateAuthority
    */
   public CertificateAuthority createAuthority(String id, String commonName) {
     return createAuthority(id, commonName, new Organization("DIGG", "SE", "VATSE-12345678"));
@@ -98,22 +77,6 @@ public final class CertificateAuthorityManager {
         generateRootCertificate(commonName, keyPair, DEFAULT_CA_VALIDITY, organization);
     X509CRL crl = generateEmptyCrl(certificate, keyPair, DEFAULT_CA_VALIDITY);
     return new CertificateAuthority(id, keyPair, certificate, crl);
-  }
-
-  /**
-   * Validates that a CA certificate is valid, has CA basic constraints, and matches its private
-   * key.
-   *
-   * @param keyPair the CA key pair
-   * @param cert the CA certificate
-   * @throws PkiCryptoException if validation fails
-   */
-  public void validateAuthority(KeyPair keyPair, X509Certificate cert) {
-    Objects.requireNonNull(keyPair, "keyPair must not be null");
-    Objects.requireNonNull(cert, "cert must not be null");
-
-    validateRootCertificate(cert);
-    validateKeyPair(keyPair, cert);
   }
 
   /** Validates the supported root profile without needing access to its private key. */
@@ -170,27 +133,13 @@ public final class CertificateAuthorityManager {
             "Private key does not match the public key in certificate '%s'"
                 .formatted(cert.getSubjectX500Principal().getName()));
       }
-    } catch (Exception e) {
+    } catch (GeneralSecurityException e) {
       throw new PkiCryptoException(
           "Failed to validate key pair against certificate: " + e.getMessage(), e);
     }
   }
 
-  /**
-   * Generates a self-signed X.509 v3 Root CA Certificate.
-   *
-   * @param commonName the Subject Common Name
-   * @param keyPair the key pair used for signing and subject
-   * @param validity validity duration
-   * @return generated X509Certificate
-   */
-  public X509Certificate generateRootCertificate(
-      String commonName, KeyPair keyPair, Duration validity) {
-    return generateRootCertificate(commonName, keyPair, validity,
-        new Organization("DIGG", "SE", "VATSE-12345678"));
-  }
-
-  public X509Certificate generateRootCertificate(String commonName, KeyPair keyPair,
+  private X509Certificate generateRootCertificate(String commonName, KeyPair keyPair,
       Duration validity, Organization organization) {
     try {
       X500Name subjectAndIssuer =
@@ -239,15 +188,8 @@ public final class CertificateAuthorityManager {
     }
   }
 
-  /**
-   * Generates a signed empty X.509 v2 CRL for the CA.
-   *
-   * @param caCert the CA certificate
-   * @param keyPair the CA key pair
-   * @param validity validity duration for the CRL
-   * @return generated X509CRL
-   */
-  public X509CRL generateEmptyCrl(X509Certificate caCert, KeyPair keyPair, Duration validity) {
+  /** Generates a signed empty X.509 v2 CRL for the CA. */
+  private X509CRL generateEmptyCrl(X509Certificate caCert, KeyPair keyPair, Duration validity) {
     try {
       Instant now = Instant.now().minus(Duration.ofMinutes(5));
       Date thisUpdate = Date.from(now);
@@ -283,9 +225,6 @@ public final class CertificateAuthorityManager {
 
   /**
    * Saves the CA files (ca.pem, ca_private_key.pem, revocation-list.pem) to the target directory.
-   *
-   * @param ca the CertificateAuthority to save
-   * @param targetDir destination directory
    */
   public void saveAuthority(CertificateAuthority ca, Path targetDir) {
     try {
@@ -300,12 +239,7 @@ public final class CertificateAuthorityManager {
     }
   }
 
-  /**
-   * Reads an X.509 Certificate from a PEM file.
-   *
-   * @param certPath path to the PEM file
-   * @return the parsed X509Certificate
-   */
+  /** Reads an X.509 Certificate from a PEM file. */
   public X509Certificate readCertificatePem(Path certPath) {
     try {
       if (!Files.exists(certPath)) {
@@ -318,12 +252,7 @@ public final class CertificateAuthorityManager {
     }
   }
 
-  /**
-   * Reads an X.509 Certificate from a PEM string.
-   *
-   * @param pemContent the PEM string content
-   * @return the parsed X509Certificate
-   */
+  /** Reads an X.509 Certificate from a PEM string. */
   public X509Certificate readCertificatePem(String pemContent) {
     try (PEMParser parser = new PEMParser(new StringReader(pemContent))) {
       Object parsed = parser.readObject();
@@ -346,12 +275,7 @@ public final class CertificateAuthorityManager {
     }
   }
 
-  /**
-   * Reads an X.509 CRL from a PEM file.
-   *
-   * @param crlPath path to the CRL file
-   * @return the parsed X509CRL
-   */
+  /** Reads an X.509 CRL from a PEM file. */
   public X509CRL readCrlPem(Path crlPath) {
     try {
       if (!Files.exists(crlPath)) {
@@ -364,12 +288,7 @@ public final class CertificateAuthorityManager {
     }
   }
 
-  /**
-   * Reads an X.509 CRL from a PEM string.
-   *
-   * @param pemContent the PEM string content
-   * @return the parsed X509CRL
-   */
+  /** Reads an X.509 CRL from a PEM string. */
   public X509CRL readCrlPem(String pemContent) {
     try (PEMParser parser = new PEMParser(new StringReader(pemContent))) {
       Object parsed = parser.readObject();

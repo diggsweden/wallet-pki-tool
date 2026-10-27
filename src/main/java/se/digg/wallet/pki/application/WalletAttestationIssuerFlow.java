@@ -6,7 +6,6 @@ package se.digg.wallet.pki.application;
 
 import java.io.PrintWriter;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
 import se.digg.wallet.pki.config.WalletAttestationIssuerConfig;
@@ -44,8 +43,7 @@ public final class WalletAttestationIssuerFlow {
   void generate(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {
     var walletAttestationIssuer = config.walletAttestationIssuer();
     var authority = inputs.authority();
-    var certificates =
-        new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
+    var certificates = new CertificateProfileIssuer(config.caDistribution().baseUrl());
     var key = new EcKeyGenerator().generateKeyPair();
     var certificate = certificates.issueWalletSigningCertificate(
         walletAttestationIssuer.signing().subject(config.organization()), key.getPublic(),

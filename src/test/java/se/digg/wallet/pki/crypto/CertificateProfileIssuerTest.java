@@ -21,8 +21,7 @@ import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 class CertificateProfileIssuerTest {
   private final CertificateProfileIssuer issuer =
-      new CertificateProfileIssuer(new java.security.SecureRandom(),
-          "https://ca-distribution.example");
+      new CertificateProfileIssuer("https://ca-distribution.example");
   private final CertificateAuthority ca =
       new CertificateAuthorityManager().createAuthority("test", "Example CA");
   private final EcKeyGenerator keys = new EcKeyGenerator();
