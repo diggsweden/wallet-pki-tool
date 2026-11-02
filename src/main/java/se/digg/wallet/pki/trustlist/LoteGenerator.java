@@ -50,14 +50,17 @@ public final class LoteGenerator {
   }
 
   public String buildLoteDocument(List<LoteAuthority> authorities, LoteConfig config,
-      Organization organization) {
+      Organization organization, long sequenceNumber) {
+    if (sequenceNumber <= 0) {
+      throw new IllegalArgumentException("LoTE sequence number must be positive");
+    }
     Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
     final var entities = authorities.stream()
         .map(authority -> entity(authority.certificate(), authority.entity(),
             serviceType(authority), organization, now))
         .collect(Collectors.joining(",\n", "[", "]"));
     var values = new LinkedHashMap<String, Object>();
-    values.put("sequenceNumber", config.sequenceNumber());
+    values.put("sequenceNumber", sequenceNumber);
     values.put("loteType", LOTE_TYPE_WALLET_PROVIDERS);
     values.put("operatorName", organization.name());
     values.put("schemeName", config.name());

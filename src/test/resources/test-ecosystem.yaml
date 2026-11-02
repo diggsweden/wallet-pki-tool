@@ -111,7 +111,6 @@ trustSource:
   lote:
     outputFile: trust-source/signed/trusted-entities.json
     name: Local LoTE
-    sequenceNumber: 1
     validityDays: 365
     trustedAuthorities:
       pidIssuer:

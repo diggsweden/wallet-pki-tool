@@ -57,7 +57,7 @@ To rebuild the LoTE without replacing the signer:
 java -jar target/wallet-pki-tool.jar trust-source lote generate -c examples/ecosystem.yaml
 ```
 
-The LoTE sequence number remains configurable; increment it in YAML when publishing an updated list.
+The LoTE sequence number is automatic: the first list starts at `1`, and each generation increments the number in the existing LoTE output file, including when replacing the signer. Preserve that file between runs to retain the sequence; deleting it or changing its output path starts a new sequence at `1`. An unreadable or invalid existing list stops generation before any outputs change. Run generation commands sequentially against the same output file.
 
 ### Configure LoTE authorities
 
