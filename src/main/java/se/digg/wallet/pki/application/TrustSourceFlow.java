@@ -28,6 +28,7 @@ import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 import se.digg.wallet.pki.infrastructure.ArtifactWriter;
 import se.digg.wallet.pki.infrastructure.AuthorityStore;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
+import se.digg.wallet.pki.infrastructure.LoteSequence;
 import se.digg.wallet.pki.trustlist.LoteAuthority;
 import se.digg.wallet.pki.trustlist.LoteGenerator;
 import se.digg.wallet.pki.trustlist.TrustListSigner;
@@ -50,7 +51,8 @@ public final class TrustSourceFlow {
     char[] password = secrets.resolve(trustSource.signer().keystorePassword());
     try {
       var signer = loadExistingSigner(config, password);
-      writeLote(config, trustedAuthorities, signer);
+      long sequenceNumber = nextLoteSequence(config);
+      writeLote(config, trustedAuthorities, signer, sequenceNumber);
       out.println("Generated: lote (existing signer retained)");
     } finally {
       Arrays.fill(password, '\0');
@@ -99,14 +101,15 @@ public final class TrustSourceFlow {
   public void generate(PkiConfiguration config, PrintWriter out) {
     try (var inputs = loadInputs(config)) {
       var trustedAuthorities = loadTrustedAuthorities(config);
-      generate(config, inputs, trustedAuthorities, out);
+      long sequenceNumber = nextLoteSequence(config);
+      generate(config, inputs, trustedAuthorities, sequenceNumber, out);
     }
   }
 
   void generate(PkiConfiguration config, ServicePkiInputs inputs,
-      List<LoteAuthority> trustedAuthorities, PrintWriter out) {
+      List<LoteAuthority> trustedAuthorities, long sequenceNumber, PrintWriter out) {
     var signer = generateSigner(config, inputs);
-    writeLote(config, trustedAuthorities, signer);
+    writeLote(config, trustedAuthorities, signer, sequenceNumber);
     writeStatusList(config, signer);
     inputs.publishAuthority();
     out.println("Generated: trust-source (new signer; lote and status-list rebuilt)");
@@ -130,11 +133,17 @@ public final class TrustSourceFlow {
     return signer;
   }
 
+  long nextLoteSequence(PkiConfiguration config) {
+    return new LoteSequence().next(Path.of(config.outputDirectory())
+        .resolve(config.trustSource().lote().outputFile()));
+  }
+
   private void writeLote(PkiConfiguration config, List<LoteAuthority> trustedAuthorities,
-      SigningIdentity signer) {
+      SigningIdentity signer, long sequenceNumber) {
     var lote = config.trustSource().lote();
     var generator = new LoteGenerator();
-    var document = generator.buildLoteDocument(trustedAuthorities, lote, config.organization());
+    var document = generator.buildLoteDocument(trustedAuthorities, lote, config.organization(),
+        sequenceNumber);
     writer.text(Path.of(config.outputDirectory()).resolve(lote.outputFile()),
         generator.sign(document, signer));
   }

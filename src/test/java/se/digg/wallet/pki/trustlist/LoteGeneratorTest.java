@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.trustlist;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -14,6 +15,8 @@ import java.util.Base64;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import se.digg.wallet.pki.config.LoteConfig;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.domain.AuthorityRole;
@@ -23,6 +26,19 @@ import tools.jackson.core.json.JsonWriteFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 class LoteGeneratorTest {
+  @ParameterizedTest
+  @ValueSource(longs = {0, -1})
+  void sequence_numbers_must_be_positive(long sequenceNumber) {
+    var config = new LoteConfig("lote.jwt", "Local LoTE", 30,
+        new LoteConfig.TrustedAuthorities(null, null, null, null));
+    var organization = new Organization("Digg", "SE", "VATSE-12345678");
+    var generator = new LoteGenerator();
+
+    assertThatThrownBy(
+        () -> generator.buildLoteDocument(List.of(), config, organization, sequenceNumber))
+        .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("must be positive");
+  }
+
   @Test
   void roles_determine_service_types_even_when_subject_names_are_misleading(@TempDir Path directory)
       throws Exception {
@@ -45,7 +61,7 @@ class LoteGeneratorTest {
             new LoteAuthority(AuthorityRole.VERIFIER_REGISTRATION, registration,
                 config.trustSource().lote().trustedAuthorities().verifierRegistration()
                     .getFirst())),
-            config.trustSource().lote(), config.organization());
+            config.trustSource().lote(), config.organization(), 7);
     var document = JsonMapper.builder().build().readTree(json);
     var entities = document.at("/LoTE/TrustedEntitiesList");
     assertThat(entities.size()).isEqualTo(4);
@@ -69,6 +85,7 @@ class LoteGeneratorTest {
     var scheme = document.at("/LoTE/ListAndSchemeInformation");
     assertThat(scheme.at("/SchemeName/0/value").asString()).isEqualTo("Local LoTE");
     assertThat(scheme.get("LoTEVersionIdentifier").asInt()).isEqualTo(1);
+    assertThat(scheme.get("LoTESequenceNumber").asLong()).isEqualTo(7);
     assertThat(scheme.get("LoTEType").asString())
         .isEqualTo(LoteGenerator.LOTE_TYPE_WALLET_PROVIDERS);
     assertThat(Duration.between(Instant.parse(scheme.get("ListIssueDateTime").asString()),
@@ -80,11 +97,11 @@ class LoteGeneratorTest {
   void supplied_mapper_serialization_settings_are_preserved() {
     var mapper = JsonMapper.builder().enable(JsonWriteFeature.ESCAPE_NON_ASCII).build();
     var generator = new LoteGenerator(mapper, new TrustListSigner());
-    var config = new LoteConfig("lote.jwt", "Svensk plånbok", 1, 30,
+    var config = new LoteConfig("lote.jwt", "Svensk plånbok", 30,
         new LoteConfig.TrustedAuthorities(null, null, null, null));
     var organization = new Organization("Digg", "SE", "VATSE-12345678");
 
-    String json = generator.buildLoteDocument(List.of(), config, organization);
+    String json = generator.buildLoteDocument(List.of(), config, organization, 1);
 
     assertThat(json).containsIgnoringCase("Svensk pl\\u00e5nbok");
     assertThat(mapper.readTree(json).at("/LoTE/ListAndSchemeInformation/SchemeName/0/value")
@@ -95,7 +112,7 @@ class LoteGeneratorTest {
   void configured_text_survives_json_escaping() {
     String text = "A \"quoted\" name\nC:\\wallet";
     var entity = new LoteConfig.Entity(text, text, "https://example.test", text, null);
-    var config = new LoteConfig("lote.jwt", text, 7, 30,
+    var config = new LoteConfig("lote.jwt", text, 30,
         new LoteConfig.TrustedAuthorities(List.of(entity), null, null, null));
     var organization = new Organization(text, "SE", "VATSE-12345678");
     var certificate = new CertificateAuthorityManager().createAuthority("test", "Test CA")
@@ -103,7 +120,7 @@ class LoteGeneratorTest {
     var anchors = List.of(new LoteAuthority(AuthorityRole.PID_ISSUER, certificate, entity));
     var generator = new LoteGenerator();
 
-    String json = generator.buildLoteDocument(anchors, config, organization);
+    String json = generator.buildLoteDocument(anchors, config, organization, 7);
     var document = JsonMapper.builder().build().readTree(json);
 
     var scheme = document.at("/LoTE/ListAndSchemeInformation");

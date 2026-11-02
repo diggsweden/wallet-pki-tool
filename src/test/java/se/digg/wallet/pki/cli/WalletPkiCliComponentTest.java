@@ -485,6 +485,38 @@ class WalletPkiCliComponentTest {
     assertThat(err.toString()).isEmpty();
   }
 
+  @ParameterizedTest
+  @ValueSource(
+      strings = {"trust-source lote generate", "trust-source generate", "ecosystem generate"})
+  void every_lote_generation_continues_the_previous_sequence(String command) throws Exception {
+    Path file = initializedEcosystem();
+    assertThat(loteSequence()).isEqualTo(1);
+
+    assertThat(run(cli(name -> "test-password"), file, command)).isZero();
+
+    assertThat(loteSequence()).isEqualTo(2);
+    assertThat(run(cli(name -> "test-password"), file, command)).isZero();
+    assertThat(loteSequence()).isEqualTo(3);
+    assertThat(err.toString()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(
+      strings = {"trust-source lote generate", "trust-source generate", "ecosystem generate"})
+  void corrupt_previous_lotes_prevent_all_output_changes(String command) throws Exception {
+    Path file = initializedEcosystem();
+    Files.writeString(directory.resolve("config/trust-source/signed/trusted-entities.json"),
+        "corrupt-lote");
+    var before = snapshot(directory.resolve("config"));
+    var roots = snapshot(directory.resolve("state"));
+
+    assertThat(run(cli(name -> "test-password"), file, command)).isEqualTo(1);
+
+    assertThat(snapshot(directory.resolve("config"))).isEqualTo(before);
+    assertThat(snapshot(directory.resolve("state"))).isEqualTo(roots);
+    assertThat(err.toString()).contains("Cannot determine next LoTE sequence number");
+  }
+
   @Test
   void ecosystem_generation_rejects_missing_role_configuration_before_reading_secrets()
       throws Exception {
@@ -669,6 +701,13 @@ class WalletPkiCliComponentTest {
     var token = JWSObject.parse(Files.readString(
         directory.resolve("config/trust-source/signed/trusted-entities.json")));
     return yaml.readTree(token.getPayload().toString()).at("/LoTE/TrustedEntitiesList");
+  }
+
+  private long loteSequence() throws Exception {
+    var token = JWSObject.parse(Files.readString(
+        directory.resolve("config/trust-source/signed/trusted-entities.json")));
+    return yaml.readTree(token.getPayload().toString())
+        .at("/LoTE/ListAndSchemeInformation/LoTESequenceNumber").asLong();
   }
 
   private Map<String, String> snapshot(Path root) throws Exception {

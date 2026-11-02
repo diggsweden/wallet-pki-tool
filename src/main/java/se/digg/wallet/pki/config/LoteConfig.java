@@ -9,12 +9,11 @@ import java.util.List;
 import se.digg.wallet.pki.domain.Checks;
 
 /** Trust anchors grouped by explicit service type, with optional certificate file overrides. */
-public record LoteConfig(String outputFile, String name, int sequenceNumber, int validityDays,
+public record LoteConfig(String outputFile, String name, int validityDays,
     TrustedAuthorities trustedAuthorities) {
   public LoteConfig {
     Checks.relativePath(outputFile, "trustSource.lote.outputFile");
     Checks.text(name, "lote.name");
-    Checks.positive(sequenceNumber, "lote.sequenceNumber");
     Checks.positive(validityDays, "lote.validityDays");
     Checks.required(trustedAuthorities, "lote.trustedAuthorities");
   }

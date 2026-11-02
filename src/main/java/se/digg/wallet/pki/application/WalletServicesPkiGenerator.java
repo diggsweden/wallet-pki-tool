@@ -37,12 +37,13 @@ public final class WalletServicesPkiGenerator {
         var verifierRegistrationInputs = verifier.loadRegistrationInputs(config);
         var trustSourceInputs = trustSource.loadInputs(config)) {
       final var trustedAuthorities = trustSource.loadTrustedAuthorities(config);
+      final long sequenceNumber = trustSource.nextLoteSequence(config);
 
       pidIssuer.generate(config, pidIssuerInputs, out);
       walletAttestationIssuer.generate(config, walletAttestationIssuerInputs, out);
       verifier.generateAccess(config, verifierAccessInputs, out);
       verifier.generateRegistration(config, verifierRegistrationInputs, out);
-      trustSource.generate(config, trustSourceInputs, trustedAuthorities, out);
+      trustSource.generate(config, trustSourceInputs, trustedAuthorities, sequenceNumber, out);
     }
   }
 }
