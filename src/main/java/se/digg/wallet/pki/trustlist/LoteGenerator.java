@@ -13,11 +13,12 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
 import se.digg.wallet.pki.config.LoteConfig;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
+import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.SigningIdentity;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
@@ -45,25 +46,34 @@ public final class LoteGenerator {
   }
 
   public LoteGenerator(ObjectMapper objectMapper, TrustListSigner trustListSigner) {
-    this.objectMapper = Objects.requireNonNull(objectMapper).rebuild().build();
+    this.objectMapper = Objects.requireNonNull(objectMapper).rebuild()
+        .enable(SerializationFeature.INDENT_OUTPUT).build();
     this.trustListSigner = Objects.requireNonNull(trustListSigner);
   }
 
   public String buildLoteDocument(List<LoteAuthority> authorities, LoteConfig config,
       Organization organization) {
+    return buildLoteDocument(authorities, config, organization,
+        config.sequenceNumber() != null ? config.sequenceNumber() : 1L);
+  }
+
+  public String buildLoteDocument(List<LoteAuthority> authorities, LoteConfig config,
+      Organization organization, long sequenceNumber) {
+    Checks.positive(sequenceNumber, "lote.sequenceNumber");
     Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
     final var entities = authorities.stream()
         .map(authority -> entity(authority.certificate(), authority.entity(),
             serviceType(authority), organization, now))
-        .collect(Collectors.joining(",\n", "[", "]"));
+        .toList();
     var values = new LinkedHashMap<String, Object>();
-    values.put("sequenceNumber", config.sequenceNumber());
+    values.put("sequenceNumber", sequenceNumber);
     values.put("loteType", LOTE_TYPE_WALLET_PROVIDERS);
     values.put("operatorName", organization.name());
     values.put("schemeName", config.name());
     values.put("territory", organization.country());
     values.put("issuedAt", now.toString());
     values.put("nextUpdate", now.plus(Duration.ofDays(config.validityDays())).toString());
+    values.put("entities", entities);
 
     return JsonTemplate.render(objectMapper, """
         {
@@ -81,7 +91,7 @@ public final class LoteGenerator {
             "TrustedEntitiesList": ${entities}
           }
         }
-        """, values).replace("${entities}", entities);
+        """, values);
   }
 
   public String sign(String document, SigningIdentity signer) {
@@ -100,7 +110,7 @@ public final class LoteGenerator {
     };
   }
 
-  private String entity(X509Certificate certificate, LoteConfig.Entity config,
+  private JsonNode entity(X509Certificate certificate, LoteConfig.Entity config,
       String serviceType, Organization organization, Instant issuedAt) {
     try {
       var values = new LinkedHashMap<String, Object>();
@@ -114,7 +124,7 @@ public final class LoteGenerator {
       values.put("serviceStatus", SVC_STATUS_GRANTED);
       values.put("issuedAt", issuedAt.toString());
 
-      return JsonTemplate.render(objectMapper, """
+      return objectMapper.readTree(JsonTemplate.render(objectMapper, """
           {
             "TrustedEntityInformation": {
               "TEName": [{ "lang": "en", "value": ${entityName} }],
@@ -140,7 +150,7 @@ public final class LoteGenerator {
               }
             ]
           }
-          """, values);
+          """, values));
     } catch (CertificateEncodingException e) {
       throw new PkiCryptoException("Cannot encode LoTE authority", e);
     }

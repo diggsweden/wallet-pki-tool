@@ -8,9 +8,13 @@ import se.digg.wallet.pki.domain.AuthorityRole;
 import se.digg.wallet.pki.domain.Checks;
 
 /** Subject settings for the fixed local CA roles; only selected authorities are required. */
-public record AuthoritiesConfig(Authority pidIssuer, Authority walletAttestationIssuer,
-    Authority verifierAccess,
+public record AuthoritiesConfig(String directory, Authority pidIssuer,
+    Authority walletAttestationIssuer, Authority verifierAccess,
     Authority verifierRegistration, Authority trustSource) {
+  public AuthoritiesConfig {
+    Checks.text(directory, "authorities.directory");
+  }
+
   public Authority require(AuthorityRole role) {
     return switch (role) {
       case PID_ISSUER -> Checks.required(pidIssuer, "authorities.pidIssuer");

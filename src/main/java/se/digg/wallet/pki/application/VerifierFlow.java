@@ -16,7 +16,6 @@ import se.digg.wallet.pki.domain.AuthorityRole;
 import se.digg.wallet.pki.domain.CertificateSubject;
 import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.SigningIdentity;
-import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
 import se.digg.wallet.pki.trustlist.RegistrationDocuments;
 
@@ -69,7 +68,7 @@ public final class VerifierFlow {
     var certificate =
         certificates.issueRelyingPartyAccessCertificate(subject, key.getPublic(), authority);
     stores.write(Path.of(config.outputDirectory()).resolve(access.keystoreFile()),
-        "verifier_access_certificate", new SigningIdentity(key, certificate),
+        access.keyAlias(), new SigningIdentity(key, certificate),
         authority, inputs.keystorePassword());
     inputs.publishAuthority();
     out.println("Generated: verifier-access (new keys; selected files replaced)");
@@ -89,12 +88,12 @@ public final class VerifierFlow {
         new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
     var key = keys.generateKeyPair();
     var subject = new CertificateSubject(registration.commonName(), config.organization(),
-        SubjectAlternativeNames.empty());
+        registration.subjectAlternativeNames());
     var certificate =
         certificates.issueRelyingPartyRegistrationCertificate(subject, key.getPublic(), authority);
     var identity = new SigningIdentity(key, certificate);
-    stores.write(outputDirectory.resolve(registration.keystoreFile()), "registration", identity,
-        authority, inputs.keystorePassword());
+    stores.write(outputDirectory.resolve(registration.keystoreFile()), registration.keyAlias(),
+        identity, authority, inputs.keystorePassword());
     new RegistrationDocuments().writeVerifier(registration.registration(), config.organization(),
         identity, authority, outputDirectory);
     inputs.publishAuthority();

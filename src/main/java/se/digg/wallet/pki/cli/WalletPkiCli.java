@@ -28,7 +28,7 @@ import se.digg.wallet.pki.domain.AuthorityRole;
 @Command(name = "wallet-pki", mixinStandardHelpOptions = true,
     description = "Generate certificates and signed documents for explicit wallet roles.",
     subcommands = CommandLine.HelpCommand.class)
-public class WalletPkiCli {
+public final class WalletPkiCli {
   @Option(names = {"-c", "--config"}, required = true, scope = ScopeType.INHERIT,
       description = "Wallet YAML configuration; only the selected operation's roles are required.")
   private Path configuration;
@@ -70,11 +70,11 @@ public class WalletPkiCli {
                 + "Requires the access authority and password.",
             verifier::generateAccess))
         .addSubcommand("registration", participant("registration", loader,
-            "Create a new registration key and replace the keystore, JWT and environment export. "
+            "Create a new registration key and replace the keystore and registration JWT. "
                 + "Requires the registration authority and password.",
             verifier::generateRegistration)));
     var trust = participant("trust-source", loader,
-        "Create a new trust signer, replace its keystore/certificate and rebuild LoTE "
+        "Create a new trust signer, replace its keystore and rebuild LoTE "
             + "with an all-valid development status list. "
             + "Requires the trust-source authority/password and configured public LoTE CAs.",
         trustSource::generate);

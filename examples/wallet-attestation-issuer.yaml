@@ -2,8 +2,7 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-schemaVersion: 1
-stateDirectory: ./.wallet-pki
+schemaVersion: 2
 outputDirectory: ./config
 
 organization:
@@ -12,6 +11,7 @@ organization:
   identifier: VATSE-12345678
 
 authorities:
+  directory: ./.wallet-pki
   walletAttestationIssuer:
     commonName: DIGG Wallet Attestation Issuer CA
 

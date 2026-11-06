@@ -72,8 +72,8 @@ class ConfigurationLoaderTest {
 
   @Test
   void unsupported_schema_versions_are_rejected() throws Exception {
-    assertInvalid(EcosystemFixture.yaml(directory).replace("schemaVersion: 1", "schemaVersion: 2"),
-        "schemaVersion must be 1");
+    assertInvalid(EcosystemFixture.yaml(directory).replace("schemaVersion: 2", "schemaVersion: 1"),
+        "schemaVersion must be 2");
   }
 
   @Test
@@ -90,7 +90,7 @@ class ConfigurationLoaderTest {
 
   @Test
   void missing_required_role_sections_are_rejected() throws Exception {
-    assertInvalid("schemaVersion: 1\nstateDirectory: state\noutputDirectory: config\n",
+    assertInvalid("schemaVersion: 2\noutputDirectory: config\n",
         "organization is required");
   }
 
@@ -132,7 +132,7 @@ class ConfigurationLoaderTest {
   void duplicate_yaml_fields_are_rejected() throws Exception {
     Path file = directory.resolve("duplicate.yaml");
     Files.writeString(file, EcosystemFixture.yaml(directory)
-        .replace("schemaVersion: 1", "schemaVersion: 1\nschemaVersion: 1"));
+        .replace("schemaVersion: 2", "schemaVersion: 2\nschemaVersion: 2"));
     assertThatThrownBy(() -> loader.load(file)).isInstanceOf(PkiConfigurationException.class)
         .hasMessageContaining("Duplicate")
         .hasMessageContaining("schemaVersion");
@@ -195,9 +195,91 @@ class ConfigurationLoaderTest {
   @Test
   void shared_ca_distribution_settings_preserve_private_state_separation() throws Exception {
     String config = Files.readString(Path.of("examples/wallet-attestation-issuer.yaml"))
-        .replace("stateDirectory: ./.wallet-pki", "stateDirectory: ./config/trust-source/private");
+        .replace("directory: ./.wallet-pki", "directory: ./config/trust-source/private");
 
     assertInvalid(config, "must not overlap");
+  }
+
+  @Test
+  void output_directory_defaults_to_the_current_working_directory() throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    document.remove("outputDirectory");
+    Path file = directory.resolve("default-output.yaml");
+    Files.writeString(file, yaml.writeValueAsString(document));
+
+    var config = loader.load(file);
+
+    assertThat(config.outputDirectory()).isEqualTo(".");
+  }
+
+  @Test
+  void pid_issuer_and_verifier_registration_require_output_files() throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var pidDoc = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    ((ObjectNode) pidDoc.path("pidIssuer").path("registration")).remove("jwtFile");
+    ((ObjectNode) pidDoc.path("pidIssuer").path("registration")).remove("jsonFile");
+    assertInvalid(yaml.writeValueAsString(pidDoc), "At least one of pidIssuer.registration");
+
+    var verifierDoc = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    ((ObjectNode) verifierDoc.path("verifier").path("registration").path("registration"))
+        .remove("jwtFile");
+    assertInvalid(yaml.writeValueAsString(verifierDoc),
+        "verifier.registration.registration.jwtFile is required");
+  }
+
+  @Test
+  void verifier_registration_requires_either_default_uri_or_all_explicit_uris()
+      throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    ((ObjectNode) document.path("verifier").path("registration").path("registration"))
+        .remove("defaultUri");
+
+    assertInvalid(yaml.writeValueAsString(document),
+        "registration.registryUri is required when registration.defaultUri is not set");
+  }
+
+  @Test
+  void duplicate_pid_issuer_key_aliases_are_rejected() throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    ((ObjectNode) document.path("pidIssuer").path("signing")).put("keyAlias", "same-alias");
+    ((ObjectNode) document.path("pidIssuer").path("encryption")).put("nonceKeyAlias", "same-alias");
+
+    assertInvalid(yaml.writeValueAsString(document), "pidIssuer key aliases must be distinct");
+  }
+
+  @Test
+  void subject_alternative_names_and_pid_encryption_are_optional_across_all_roles()
+      throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    ((ObjectNode) document.path("pidIssuer").path("signing")).remove("subjectAlternativeNames");
+    ((ObjectNode) document.path("pidIssuer")).remove("encryption");
+    ((ObjectNode) document.path("walletAttestationIssuer").path("signing"))
+        .remove("subjectAlternativeNames");
+    ((ObjectNode) document.path("verifier").path("access")).remove("subjectAlternativeNames");
+    ((ObjectNode) document.path("verifier").path("registration"))
+        .putObject("subjectAlternativeNames").putArray("dns").add("verifier-registration");
+    ((ObjectNode) document.path("trustSource").path("signer"))
+        .putObject("subjectAlternativeNames").putArray("dns").add("trust-source-signer");
+    Path file = directory.resolve("sans.yaml");
+    Files.writeString(file, yaml.writeValueAsString(document));
+
+    var config = loader.load(file);
+
+    assertThat(config.pidIssuer().signing().subjectAlternativeNames().dns()).isEmpty();
+    assertThat(config.pidIssuer().encryption().subjectAlternativeNames().dns()).isEmpty();
+    assertThat(config.pidIssuer().encryption().nonceKeyAlias()).isEqualTo("nonce-encryption");
+    assertThat(config.pidIssuer().encryption().requestKeyAlias()).isEqualTo("request-encryption");
+    assertThat(config.walletAttestationIssuer().signing().subjectAlternativeNames().dns())
+        .isEmpty();
+    assertThat(config.verifier().access().subjectAlternativeNames().dns()).isEmpty();
+    assertThat(config.verifier().registration().subjectAlternativeNames().dns())
+        .containsExactly("verifier-registration");
+    assertThat(config.trustSource().signer().subjectAlternativeNames().dns())
+        .containsExactly("trust-source-signer");
   }
 
   private void assertInvalid(String yaml, String message) throws Exception {

@@ -9,16 +9,16 @@ import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.Organization;
 
 /** Shared settings and optional wallet roles; each operation requires its own role inputs. */
-public record PkiConfiguration(int schemaVersion, String stateDirectory, String outputDirectory,
+public record PkiConfiguration(int schemaVersion, String outputDirectory,
     Organization organization, AuthoritiesConfig authorities, CaDistributionConfig caDistribution,
     PidIssuerConfig pidIssuer, WalletAttestationIssuerConfig walletAttestationIssuer,
     VerifierConfig verifier, TrustSourceConfig trustSource) {
   public PkiConfiguration {
-    if (schemaVersion != 1) {
-      throw new IllegalArgumentException("schemaVersion must be 1");
+    if (schemaVersion != 2) {
+      throw new IllegalArgumentException("schemaVersion must be 2");
     }
-    Checks.text(stateDirectory, "stateDirectory");
-    Checks.text(outputDirectory, "outputDirectory");
+    outputDirectory =
+        outputDirectory == null ? "." : Checks.text(outputDirectory, "outputDirectory");
     Checks.required(organization, "organization");
     Checks.required(authorities, "authorities");
     if (caDistribution == null && trustSource != null) {
@@ -30,11 +30,11 @@ public record PkiConfiguration(int schemaVersion, String stateDirectory, String 
       throw new IllegalArgumentException(
           "Configure CA distribution settings in caDistribution or trustSource, not both");
     }
-    caDistribution = Checks.required(caDistribution, "caDistribution");
-    Path state = Path.of(stateDirectory).toAbsolutePath().normalize();
-    Path publicDirectory =
-        Path.of(outputDirectory).resolve(caDistribution.directory()).toAbsolutePath()
-            .normalize();
+    Path state = Path.of(authorities.directory()).toAbsolutePath().normalize();
+    Path publicDirectory = Path.of(outputDirectory)
+        .resolve(Checks.required(caDistribution, "caDistribution").directory())
+        .toAbsolutePath()
+        .normalize();
     if (state.startsWith(publicDirectory) || publicDirectory.startsWith(state)) {
       throw new IllegalArgumentException(
           "Private state and public trust-source directories must not overlap");

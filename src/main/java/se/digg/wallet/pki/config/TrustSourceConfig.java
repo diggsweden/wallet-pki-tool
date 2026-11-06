@@ -5,6 +5,7 @@
 package se.digg.wallet.pki.config;
 
 import se.digg.wallet.pki.domain.Checks;
+import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 /** A dedicated leaf under the trust-source CA signs the trust documents. */
 public record TrustSourceConfig(Signer signer,
@@ -22,16 +23,18 @@ public record TrustSourceConfig(Signer signer,
     }
   }
 
-  public record Signer(String keystoreFile, String certificateFile,
-      String commonName, PasswordSource keystorePassword) {
+  public record Signer(String keystoreFile, String keyAlias,
+      String commonName, SubjectAlternativeNames subjectAlternativeNames,
+      PasswordSource keystorePassword) {
     public Signer {
       Checks.relativePath(keystoreFile, "trustSource.signer.keystoreFile");
-      if (certificateFile != null) {
-        Checks.relativePath(certificateFile, "trustSource.signer.certificateFile");
-      }
+      keyAlias = keyAlias == null ? "trust_source"
+          : Checks.text(keyAlias, "trustSource.signer.keyAlias");
       if (commonName != null) {
         Checks.text(commonName, "trustSource.signer.commonName");
       }
+      subjectAlternativeNames = subjectAlternativeNames == null ? SubjectAlternativeNames.empty()
+          : subjectAlternativeNames;
       Checks.required(keystorePassword, "trustSource.signer.keystorePassword");
     }
   }
