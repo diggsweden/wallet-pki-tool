@@ -37,19 +37,23 @@ public final class Checks {
   }
 
   /** Artifact locations are explicit paths relative to the output directory. */
-  public static String relativePath(String value, String field) {
+  public static void relativePath(String value, String field) {
     Path path = Path.of(text(value, field)).normalize();
     if (path.isAbsolute() || path.startsWith("..") || path.toString().isEmpty()) {
       throw new IllegalArgumentException(field + " must be a relative path inside outputDirectory");
     }
-    return value;
   }
 
-  public static int positive(int value, String field) {
+  public static void positive(int value, String field) {
     if (value <= 0) {
       throw new IllegalArgumentException(field + " must be positive");
     }
-    return value;
+  }
+
+  public static void positive(long value, String field) {
+    if (value <= 0) {
+      throw new IllegalArgumentException(field + " must be positive");
+    }
   }
 
   public static List<String> texts(List<String> values, String field) {

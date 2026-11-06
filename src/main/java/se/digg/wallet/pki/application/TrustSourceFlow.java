@@ -24,10 +24,10 @@ import se.digg.wallet.pki.domain.AuthorityRole;
 import se.digg.wallet.pki.domain.CertificateSubject;
 import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.SigningIdentity;
-import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 import se.digg.wallet.pki.infrastructure.ArtifactWriter;
 import se.digg.wallet.pki.infrastructure.AuthorityStore;
 import se.digg.wallet.pki.infrastructure.IdentityStores;
+import se.digg.wallet.pki.infrastructure.LoteSequence;
 import se.digg.wallet.pki.trustlist.LoteAuthority;
 import se.digg.wallet.pki.trustlist.LoteGenerator;
 import se.digg.wallet.pki.trustlist.TrustListSigner;
@@ -50,7 +50,8 @@ public final class TrustSourceFlow {
     char[] password = secrets.resolve(trustSource.signer().keystorePassword());
     try {
       var signer = loadExistingSigner(config, password);
-      writeLote(config, trustedAuthorities, signer);
+      long sequenceNumber = nextLoteSequence(config);
+      writeLote(config, trustedAuthorities, signer, sequenceNumber);
       out.println("Generated: lote (existing signer retained)");
     } finally {
       Arrays.fill(password, '\0');
@@ -61,8 +62,6 @@ public final class TrustSourceFlow {
     var trustSource = requireSignerConfiguration(config);
     Checks.required(trustSource.lote(), "trustSource.lote");
     Checks.text(trustSource.signer().commonName(), "trustSource.signer.commonName");
-    Checks.relativePath(trustSource.signer().certificateFile(),
-        "trustSource.signer.certificateFile");
     return trustSource;
   }
 
@@ -90,8 +89,8 @@ public final class TrustSourceFlow {
       AuthorityRole role, List<LoteConfig.Entity> settings) {
     var certificates = new CertificateAuthorityManager();
     for (var entry : settings) {
-      var certificate = entry.certificateFile() == null ? authorities.loadPublic(role)
-          : certificates.readCertificatePem(Path.of(entry.certificateFile()));
+      var certificate = entry.caCertificateFile() == null ? authorities.loadPublic(role)
+          : certificates.readCertificatePem(Path.of(entry.caCertificateFile()));
       entries.add(new LoteAuthority(role, certificate, entry));
     }
   }
@@ -99,14 +98,15 @@ public final class TrustSourceFlow {
   public void generate(PkiConfiguration config, PrintWriter out) {
     try (var inputs = loadInputs(config)) {
       var trustedAuthorities = loadTrustedAuthorities(config);
-      generate(config, inputs, trustedAuthorities, out);
+      long sequenceNumber = nextLoteSequence(config);
+      generate(config, inputs, trustedAuthorities, sequenceNumber, out);
     }
   }
 
   void generate(PkiConfiguration config, ServicePkiInputs inputs,
-      List<LoteAuthority> trustedAuthorities, PrintWriter out) {
+      List<LoteAuthority> trustedAuthorities, long sequenceNumber, PrintWriter out) {
     var signer = generateSigner(config, inputs);
-    writeLote(config, trustedAuthorities, signer);
+    writeLote(config, trustedAuthorities, signer, sequenceNumber);
     writeStatusList(config, signer);
     inputs.publishAuthority();
     out.println("Generated: trust-source (new signer; lote and status-list rebuilt)");
@@ -120,22 +120,30 @@ public final class TrustSourceFlow {
         new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
     var key = new EcKeyGenerator().generateKeyPair();
     var subject = new CertificateSubject(settings.commonName(), config.organization(),
-        SubjectAlternativeNames.empty());
+        settings.subjectAlternativeNames());
     var certificate =
         certificates.issueTrustSourceSignerCertificate(subject, key.getPublic(), authority);
     var signer = new SigningIdentity(key, certificate);
-    new IdentityStores().write(outputDirectory.resolve(settings.keystoreFile()), "trust_source",
-        signer, authority, inputs.keystorePassword());
-    writer.pem(outputDirectory.resolve(settings.certificateFile()), certificate);
+    new IdentityStores().write(outputDirectory.resolve(settings.keystoreFile()),
+        settings.keyAlias(), signer, authority, inputs.keystorePassword());
     return signer;
   }
 
+  long nextLoteSequence(PkiConfiguration config) {
+    var lote = config.trustSource().lote();
+    if (lote.sequenceNumber() != null) {
+      return lote.sequenceNumber();
+    }
+    return new LoteSequence().next(Path.of(config.outputDirectory()).resolve(lote.jwtFile()));
+  }
+
   private void writeLote(PkiConfiguration config, List<LoteAuthority> trustedAuthorities,
-      SigningIdentity signer) {
+      SigningIdentity signer, long sequenceNumber) {
     var lote = config.trustSource().lote();
     var generator = new LoteGenerator();
-    var document = generator.buildLoteDocument(trustedAuthorities, lote, config.organization());
-    writer.text(Path.of(config.outputDirectory()).resolve(lote.outputFile()),
+    var document = generator.buildLoteDocument(trustedAuthorities, lote, config.organization(),
+        sequenceNumber);
+    writer.text(Path.of(config.outputDirectory()).resolve(lote.jwtFile()),
         generator.sign(document, signer));
   }
 
@@ -156,9 +164,11 @@ public final class TrustSourceFlow {
   }
 
   private SigningIdentity loadExistingSigner(PkiConfiguration config, char[] password) {
+    var signer = config.trustSource().signer();
     return new IdentityStores().loadTrustSigner(
-        Path.of(config.outputDirectory()).resolve(config.trustSource().signer().keystoreFile()),
-        password, new AuthorityStore(config).loadPublic(AuthorityRole.TRUST_SOURCE));
+        Path.of(config.outputDirectory()).resolve(signer.keystoreFile()),
+        signer.keyAlias(), password,
+        new AuthorityStore(config).loadPublic(AuthorityRole.TRUST_SOURCE));
   }
 
   private static TrustSourceConfig requireSignerConfiguration(PkiConfiguration config) {

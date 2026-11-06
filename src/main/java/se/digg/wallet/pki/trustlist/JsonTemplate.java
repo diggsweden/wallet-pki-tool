@@ -17,6 +17,6 @@ final class JsonTemplate {
       result = result.replace("${%s}".formatted(entry.getKey()),
           json.writeValueAsString(entry.getValue()));
     }
-    return result;
+    return json.writeValueAsString(json.readTree(result));
   }
 }

@@ -122,8 +122,12 @@ class WalletPkiCliComponentTest {
   void selected_authorities_need_only_their_own_common_name() throws Exception {
     Path file = configuration();
     var config = (ObjectNode) yaml.readTree(Files.readString(file));
-    var authority = config.path("authorities").path("walletAttestationIssuer").deepCopy();
-    config.putObject("authorities").set("walletAttestationIssuer", authority);
+    var authoritiesNode = config.path("authorities");
+    var authority = authoritiesNode.path("walletAttestationIssuer").deepCopy();
+    String authoritiesDir = authoritiesNode.path("directory").asString();
+    var newAuthorities = config.putObject("authorities");
+    newAuthorities.put("directory", authoritiesDir);
+    newAuthorities.set("walletAttestationIssuer", authority);
     Files.writeString(file, yaml.writeValueAsString(config));
 
     assertThat(run(cli(name -> null), file, "authorities init wallet-attestation-issuer")).isZero();
@@ -297,7 +301,6 @@ class WalletPkiCliComponentTest {
     assertTrustDocumentsSignedBy(current);
     var after = snapshot(directory.resolve("config"));
     for (String path : List.of("certificates/trust-list-signer/trust_source.p12",
-        "certificates/trust-list-signer/trust_source_cert.pem",
         "trust-source/signed/trusted-entities.json", "trust-source/signed/status-list.jwt")) {
       before.remove(path);
       after.remove(path);
@@ -361,7 +364,7 @@ class WalletPkiCliComponentTest {
     var entries = config.path("trustSource").path("lote").path("trustedAuthorities")
         .withArray("pidIssuer");
     var previous = ((ObjectNode) entries.get(0)).deepCopy();
-    previous.put("certificateFile", absolutePath ? certificateFile.toString()
+    previous.put("caCertificateFile", absolutePath ? certificateFile.toString()
         : Path.of("").toAbsolutePath().relativize(certificateFile).toString());
     previous.put("entityName", "Previous PID Provider");
     entries.add(previous);
@@ -404,7 +407,7 @@ class WalletPkiCliComponentTest {
     var config = (ObjectNode) yaml.readTree(Files.readString(file));
     var lote = (ObjectNode) config.path("trustSource").path("lote");
     var entry = ((ObjectNode) lote.path("trustedAuthorities").path("pidIssuer").get(0)).deepCopy();
-    entry.put("certificateFile", certificateFile.toString());
+    entry.put("caCertificateFile", certificateFile.toString());
     lote.putObject("trustedAuthorities").putArray("pidIssuer").add(entry);
     Files.writeString(file, yaml.writeValueAsString(config));
     deleteAuthorityPrivateKeys(true);
@@ -447,7 +450,7 @@ class WalletPkiCliComponentTest {
     }
     var config = (ObjectNode) yaml.readTree(Files.readString(file));
     ((ObjectNode) config.path("trustSource").path("lote").path("trustedAuthorities")
-        .path("pidIssuer").get(0)).put("certificateFile", certificateFile.toString());
+        .path("pidIssuer").get(0)).put("caCertificateFile", certificateFile.toString());
     Files.writeString(file, yaml.writeValueAsString(config));
     var before = snapshot(directory.resolve("config"));
 
@@ -463,8 +466,7 @@ class WalletPkiCliComponentTest {
     Path file = configuration("trustSource.signer", "trustSource.lote");
     final String output = "trust-source/signed/trusted-entities.json";
     var config = (ObjectNode) yaml.readTree(Files.readString(file));
-    ((ObjectNode) config.path("trustSource").path("signer"))
-        .remove(List.of("certificateFile", "commonName"));
+    ((ObjectNode) config.path("trustSource").path("signer")).remove("commonName");
     Files.writeString(file, yaml.writeValueAsString(config));
     deleteAuthorityPrivateKeys(true);
     var before = snapshot(directory.resolve("config"));
@@ -482,6 +484,64 @@ class WalletPkiCliComponentTest {
     after.remove(output);
     assertThat(after).isEqualTo(before);
     assertThat(snapshot(directory.resolve("state"))).isEqualTo(roots);
+    assertThat(err.toString()).isEmpty();
+  }
+
+  @Test
+  void lote_sequence_numbers_continue_across_lote_trust_source_and_ecosystem_generations()
+      throws Exception {
+    Path file = initializedEcosystem();
+    var cli = cli(name -> "test-password");
+
+    assertThat(loteSequence()).isEqualTo(1);
+    assertThat(run(cli, file, "trust-source lote generate")).isZero();
+    assertThat(loteSequence()).isEqualTo(2);
+    assertThat(run(cli, file, "trust-source generate")).isZero();
+    assertThat(loteSequence()).isEqualTo(3);
+    assertThat(run(cli, file, "ecosystem generate")).isZero();
+    assertThat(loteSequence()).isEqualTo(4);
+    var config = (ObjectNode) yaml.readTree(Files.readString(file));
+    ((ObjectNode) config.path("trustSource").path("lote")).put("sequenceNumber", 42);
+    Files.writeString(file, yaml.writeValueAsString(config));
+    assertThat(run(cli, file, "trust-source lote generate")).isZero();
+    assertThat(loteSequence()).isEqualTo(42);
+    assertThat(err.toString()).isEmpty();
+  }
+
+  @Test
+  void configured_key_aliases_are_used_when_writing_and_reloading_keystores() throws Exception {
+    Path file = EcosystemFixture.configurationFile(directory);
+    var config = (ObjectNode) yaml.readTree(Files.readString(file));
+    ((ObjectNode) config.path("pidIssuer").path("signing")).put("keyAlias", "custom-pid-signing");
+    ((ObjectNode) config.path("pidIssuer").path("encryption"))
+        .put("nonceKeyAlias", "custom-nonce")
+        .put("requestKeyAlias", "custom-request");
+    ((ObjectNode) config.path("walletAttestationIssuer").path("signing"))
+        .put("keyAlias", "custom-wallet");
+    ((ObjectNode) config.path("verifier").path("access")).put("keyAlias", "custom-access");
+    ((ObjectNode) config.path("verifier").path("registration"))
+        .put("keyAlias", "custom-registration");
+    ((ObjectNode) config.path("trustSource").path("signer")).put("keyAlias", "custom-trust-signer");
+    Files.writeString(file, yaml.writeValueAsString(config));
+    var cli = cli(name -> "test-password");
+    assertThat(run(cli, file, "authorities init")).isZero();
+
+    assertThat(run(cli, file, "ecosystem generate")).isZero();
+    assertThat(run(cli, file, "trust-source lote generate")).isZero();
+
+    assertThat(Collections.list(keystore("certificates/issuer/pid_issuer.p12").aliases()))
+        .containsExactlyInAnyOrder("custom-pid-signing", "custom-nonce", "custom-request");
+    assertThat(Collections.list(keystore(
+        "certificates/wallet-attestation-issuer/wallet_attestation_issuer.p12").aliases()))
+        .containsExactly("custom-wallet");
+    assertThat(Collections.list(keystore(
+        "certificates/verifier-access-certificate/verifier-access-certificate.p12").aliases()))
+        .containsExactly("custom-access");
+    assertThat(Collections.list(keystore(
+        "certificates/verifier-registration-certificate/verifier-registration-certificate.p12")
+        .aliases())).containsExactly("custom-registration");
+    assertThat(Collections.list(keystore("certificates/trust-list-signer/trust_source.p12")
+        .aliases())).containsExactly("custom-trust-signer");
     assertThat(err.toString()).isEmpty();
   }
 
@@ -669,6 +729,13 @@ class WalletPkiCliComponentTest {
     var token = JWSObject.parse(Files.readString(
         directory.resolve("config/trust-source/signed/trusted-entities.json")));
     return yaml.readTree(token.getPayload().toString()).at("/LoTE/TrustedEntitiesList");
+  }
+
+  private long loteSequence() throws Exception {
+    var token = JWSObject.parse(Files.readString(
+        directory.resolve("config/trust-source/signed/trusted-entities.json")));
+    return yaml.readTree(token.getPayload().toString())
+        .at("/LoTE/ListAndSchemeInformation/LoTESequenceNumber").asLong();
   }
 
   private Map<String, String> snapshot(Path root) throws Exception {

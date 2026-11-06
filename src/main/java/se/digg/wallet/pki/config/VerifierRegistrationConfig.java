@@ -8,18 +8,42 @@ import java.util.List;
 import se.digg.wallet.pki.domain.Checks;
 
 /** Business metadata for the verifier's PID registration JWT. */
-public record VerifierRegistrationConfig(String jwtFile, String environmentFile,
+public record VerifierRegistrationConfig(String jwtFile,
     String name, String serviceIdentifier,
     String intendedUseId,
-    String publicBaseUrl, List<LocalizedText> description, List<LocalizedText> purpose,
+    String publicBaseUrl, String registryUri, String privacyPolicyUri, String infoUri,
+    String supportUri, String certificatePolicyUri, String statusListUri,
+    List<LocalizedText> description, List<LocalizedText> purpose,
     List<String> requestedPidClaims, SupervisoryAuthority supervisoryAuthority, int validityDays) {
+  public VerifierRegistrationConfig(String jwtFile,
+      String name, String serviceIdentifier, String intendedUseId,
+      String publicBaseUrl, List<LocalizedText> description, List<LocalizedText> purpose,
+      List<String> requestedPidClaims, SupervisoryAuthority supervisoryAuthority,
+      int validityDays) {
+    this(jwtFile, name, serviceIdentifier, intendedUseId, publicBaseUrl,
+        null, null, null, null, null, null, description, purpose, requestedPidClaims,
+        supervisoryAuthority, validityDays);
+  }
+
   public VerifierRegistrationConfig {
     Checks.relativePath(jwtFile, "verifier.registration.registration.jwtFile");
-    Checks.relativePath(environmentFile, "verifier.registration.registration.environmentFile");
     Checks.text(name, "registration.name");
     Checks.text(serviceIdentifier, "registration.serviceIdentifier");
     Checks.text(intendedUseId, "registration.intendedUseId");
-    Checks.httpUrl(publicBaseUrl, "registration.publicBaseUrl");
+    String base = null;
+    if (publicBaseUrl != null) {
+      Checks.httpUrl(publicBaseUrl, "registration.publicBaseUrl");
+      base = publicBaseUrl.replaceAll("/+$", "");
+    }
+    registryUri = resolveUri(registryUri, base, "/registry", "registration.registryUri");
+    privacyPolicyUri =
+        resolveUri(privacyPolicyUri, base, "/privacy", "registration.privacyPolicyUri");
+    infoUri = resolveUri(infoUri, base, "/info", "registration.infoUri");
+    supportUri = resolveUri(supportUri, base, "/support", "registration.supportUri");
+    certificatePolicyUri = resolveUri(certificatePolicyUri, base, "/certificate-policy",
+        "registration.certificatePolicyUri");
+    statusListUri = resolveUri(statusListUri, base, "/registration-certificate-status",
+        "registration.statusListUri");
     description = List.copyOf(Checks.required(description, "registration.description"));
     purpose = List.copyOf(Checks.required(purpose, "registration.purpose"));
     if (description.isEmpty() || purpose.isEmpty()) {
@@ -34,6 +58,18 @@ public record VerifierRegistrationConfig(String jwtFile, String environmentFile,
     }
     Checks.required(supervisoryAuthority, "registration.supervisoryAuthority");
     Checks.positive(validityDays, "registration.validityDays");
+  }
+
+  private static String resolveUri(String explicitUri, String base, String defaultSuffix,
+      String field) {
+    if (explicitUri != null) {
+      return Checks.httpUrl(explicitUri, field);
+    }
+    if (base == null) {
+      throw new IllegalArgumentException(
+          field + " is required when registration.publicBaseUrl is not set");
+    }
+    return base + defaultSuffix;
   }
 
   public record LocalizedText(String lang, String value) {

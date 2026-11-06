@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import se.digg.wallet.pki.config.PidIssuerConfig;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.LocalizedText;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.SupervisoryAuthority;
@@ -23,12 +24,15 @@ import se.digg.wallet.pki.domain.CertificateSubject;
 import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
+import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 class RegistrationDocumentsIntegrationTest {
   @TempDir
   Path directory;
+  private final tools.jackson.databind.ObjectMapper prettyMapper =
+      JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
 
   @Test
   void verifier_registration_preserves_the_protocol_document() throws Exception {
@@ -89,8 +93,68 @@ class RegistrationDocumentsIntegrationTest {
     assertThat(payload.at("/supervisory_authority/name").asString()).isEqualTo(text);
   }
 
+  @Test
+  void explicit_uris_override_public_base_url() throws Exception {
+    var config = new VerifierRegistrationConfig("registration.jwt", "Service",
+        "wallet-ecosystem", "1", null,
+        "https://registry.example.test/r",
+        "https://privacy.example.test/p",
+        "https://info.example.test/i",
+        "https://support.example.test/s",
+        "https://policy.example.test/cp",
+        "https://status.example.test/sl",
+        List.of(new LocalizedText("en", "Service")),
+        List.of(new LocalizedText("en", "Identification")),
+        List.of("family_name"),
+        new SupervisoryAuthority("IMY", "SE", "help@example.test"), 30);
+    var organization = new Organization("DIGG", "SE", "VATSE-12345678");
+    var authority = new CertificateAuthorityManager().createAuthority("registration", "Test CA");
+    var key = new EcKeyGenerator().generateKeyPair();
+    var certificate = new CertificateProfileIssuer().issueRelyingPartyRegistrationCertificate(
+        new CertificateSubject("Registration", organization, SubjectAlternativeNames.empty()),
+        key.getPublic(), authority);
+
+    new RegistrationDocuments().writeVerifier(config, organization,
+        new SigningIdentity(key, certificate), authority, directory);
+
+    assertThat(directory.resolve("registration.jwt")).isRegularFile();
+    String rawPayload = JWSObject.parse(Files.readString(directory.resolve("registration.jwt")))
+        .getPayload().toString();
+    var payload = prettyMapper.readTree(rawPayload);
+    assertThat(rawPayload).isEqualTo(prettyMapper.writeValueAsString(payload));
+    assertThat(payload.get("registry_uri").asString()).isEqualTo("https://registry.example.test/r");
+    assertThat(payload.get("privacy_policy").asString())
+        .isEqualTo("https://privacy.example.test/p");
+    assertThat(payload.get("info_uri").asString()).isEqualTo("https://info.example.test/i");
+    assertThat(payload.get("support_uri").asString()).isEqualTo("https://support.example.test/s");
+    assertThat(payload.get("certificate_policy").asString())
+        .isEqualTo("https://policy.example.test/cp");
+    assertThat(payload.at("/status/status_list/uri").asString())
+        .isEqualTo("https://status.example.test/sl");
+  }
+
+  @Test
+  void pid_issuer_registration_json_output_is_pretty_printed() throws Exception {
+    var organization = new Organization("DIGG", "SE", "VATSE-12345678");
+    var authority = new CertificateAuthorityManager().createAuthority("pid", "PID CA");
+    var key = new EcKeyGenerator().generateKeyPair();
+    var certificate = new CertificateProfileIssuer().issuePidSigningCertificate(
+        new CertificateSubject("PID", organization, SubjectAlternativeNames.empty()),
+        key.getPublic(), authority);
+    var config =
+        new PidIssuerConfig.Registration(null, "issuer_wrprc.json", "did:web:localhost",
+            "did:web:localhost");
+
+    new RegistrationDocuments().writePidIssuer(config, new SigningIdentity(key, certificate),
+        directory);
+
+    assertThat(directory.resolve("issuer_wrprc.jwt")).doesNotExist();
+    String content = Files.readString(directory.resolve("issuer_wrprc.json"));
+    assertThat(content).isEqualTo(prettyMapper.writeValueAsString(prettyMapper.readTree(content)));
+  }
+
   private ObjectNode writeVerifier(String name) throws Exception {
-    var config = new VerifierRegistrationConfig("registration.jwt", "registration.env", name,
+    var config = new VerifierRegistrationConfig("registration.jwt", name,
         "wallet-ecosystem", "1", "https://example.test/",
         List.of(new LocalizedText("en", name)),
         List.of(new LocalizedText("en", "Identification")),
@@ -111,8 +175,9 @@ class RegistrationDocumentsIntegrationTest {
     var document = JWSObject.parse(token);
     assertThat(document.getHeader().getType().toString()).isEqualTo("rc-wrp+jwt");
     assertThat(document.getHeader().getX509CertChain()).hasSize(2);
-    assertThat(Files.readString(directory.resolve(config.environmentFile())))
-        .isEqualTo("VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + token + "\n");
-    return (ObjectNode) JsonMapper.builder().build().readTree(document.getPayload().toString());
+    String rawPayload = document.getPayload().toString();
+    var tree = prettyMapper.readTree(rawPayload);
+    assertThat(rawPayload).isEqualTo(prettyMapper.writeValueAsString(tree));
+    return (ObjectNode) tree;
   }
 }

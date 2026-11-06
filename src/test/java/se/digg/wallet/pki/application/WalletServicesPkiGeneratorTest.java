@@ -41,7 +41,7 @@ class WalletServicesPkiGeneratorTest {
         "certificates/verifier-access-certificate/verifier-access-certificate.p12",
         "certificates/verifier-registration-certificate/verifier-registration-certificate.p12",
         "certificates/trust-list-signer/trust_source.p12", "pid-issuer/issuer_wrprc.jwt",
-        "certificates/verifier-registration-certificate/registration_certificate.env",
+        "certificates/verifier-registration-certificate/registration_certificate.jwt",
         "trust-source/signed/trusted-entities.json", "trust-source/signed/status-list.jwt")) {
       assertThat(Files.isRegularFile(Path.of(config.outputDirectory()).resolve(relative)))
           .as(relative).isTrue();
@@ -113,11 +113,6 @@ class WalletServicesPkiGeneratorTest {
     assertThat(
         payload.path("credentials").get(0).path("claim").get(4).path("path").get(1).asString())
         .isEqualTo("street_address");
-    assertThat(Files.readString(
-        directory.resolve(
-            "config/certificates/verifier-registration-certificate/registration_certificate.env")))
-        .isEqualTo(
-            "VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + registration.serialize() + "\n");
     for (var role : AuthorityRole.values()) {
       assertThat(new CertificateAuthorityManager()
           .readCertificatePem(directory.resolve("config/trust-source")
@@ -232,7 +227,7 @@ class WalletServicesPkiGeneratorTest {
   void generation_never_creates_missing_authorities() throws Exception {
     var config = EcosystemFixture.configuration(directory);
     var outputDirectory = Path.of(config.outputDirectory());
-    var stateDirectory = Path.of(config.stateDirectory());
+    var stateDirectory = Path.of(config.authorities().directory());
     assertThatThrownBy(() -> new PidIssuerFlow(new SecretResolver(name -> "test-password"))
         .generate(config, EcosystemFixture.quiet()))
         .hasMessageContaining("authorities init");
@@ -263,9 +258,7 @@ class WalletServicesPkiGeneratorTest {
         "pid-issuer/issuer_wrprc.jwt",
         "pid-issuer/issuer_wrprc.json",
         "certificates/verifier-registration-certificate/registration_certificate.jwt",
-        "certificates/verifier-registration-certificate/registration_certificate.env",
         "certificates/trust-list-signer/trust_source.p12",
-        "certificates/trust-list-signer/trust_source_cert.pem",
         "trust-source/signed/trusted-entities.json",
         "trust-source/signed/status-list.jwt");
     String yaml = EcosystemFixture.yaml(directory);

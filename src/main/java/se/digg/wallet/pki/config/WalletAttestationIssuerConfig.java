@@ -11,7 +11,8 @@ public record WalletAttestationIssuerConfig(String keystoreFile, SigningConfig s
     PasswordSource keystorePassword) {
   public WalletAttestationIssuerConfig {
     Checks.relativePath(keystoreFile, "walletAttestationIssuer.keystoreFile");
-    Checks.required(signing, "walletAttestationIssuer.signing");
+    signing = Checks.required(signing, "walletAttestationIssuer.signing")
+        .withDefaultKeyAlias("wallet_attestation_issuer");
     Checks.required(keystorePassword, "walletAttestationIssuer.keystorePassword");
   }
 }
