@@ -70,7 +70,7 @@ public final class PidIssuerFlow {
             pidIssuer.encryption().subjectAlternativeNames()),
         requestKey.getPublic(), authority));
     var material = new PidIssuerMaterial(authority, signing, nonce, request);
-    writeKeystore(material, outputDirectory.resolve(pidIssuer.keystoreFile()),
+    writeKeystore(pidIssuer, material, outputDirectory.resolve(pidIssuer.keystoreFile()),
         inputs.keystorePassword());
     new RegistrationDocuments().writePidIssuer(pidIssuer.registration(), material.signing(),
         outputDirectory);
@@ -78,13 +78,15 @@ public final class PidIssuerFlow {
     out.println("Generated: pid-issuer (new keys; selected files replaced)");
   }
 
-  private void writeKeystore(PidIssuerMaterial material, Path keystoreFile, char[] password) {
+  private void writeKeystore(PidIssuerConfig config, PidIssuerMaterial material, Path keystoreFile,
+      char[] password) {
     var store = keystores.createPkcs12KeyStore();
-    addIdentity(store, "pid_issuer", material.signing(), material.authority(), password);
-    addIdentity(store, "nonce-encryption", material.nonceEncryption(), material.authority(),
+    addIdentity(store, config.signing().keyAlias(), material.signing(), material.authority(),
         password);
-    addIdentity(store, "request-encryption", material.requestEncryption(), material.authority(),
-        password);
+    addIdentity(store, config.encryption().nonceKeyAlias(), material.nonceEncryption(),
+        material.authority(), password);
+    addIdentity(store, config.encryption().requestKeyAlias(), material.requestEncryption(),
+        material.authority(), password);
     keystores.saveKeyStore(store, keystoreFile, password);
   }
 

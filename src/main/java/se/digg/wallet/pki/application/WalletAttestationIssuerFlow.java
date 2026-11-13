@@ -52,7 +52,7 @@ public final class WalletAttestationIssuerFlow {
         authority);
     new IdentityStores().write(
         Path.of(config.outputDirectory()).resolve(walletAttestationIssuer.keystoreFile()),
-        "wallet_attestation_issuer",
+        walletAttestationIssuer.signing().keyAlias(),
         new SigningIdentity(key, certificate), authority, inputs.keystorePassword());
     inputs.publishAuthority();
     out.println("Generated: wallet-attestation-issuer (new keys; selected files replaced)");

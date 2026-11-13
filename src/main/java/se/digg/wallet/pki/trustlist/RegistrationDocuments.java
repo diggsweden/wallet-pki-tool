@@ -20,11 +20,13 @@ import se.digg.wallet.pki.domain.Organization;
 import se.digg.wallet.pki.domain.SigningIdentity;
 import se.digg.wallet.pki.infrastructure.ArtifactWriter;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /** JSON registration documents rendered from explicit placeholders. */
 public final class RegistrationDocuments {
-  private final ObjectMapper json = JsonMapper.builder().build();
+  private final ObjectMapper json =
+      JsonMapper.builder().enable(SerializationFeature.INDENT_OUTPUT).build();
   private final TrustListSigner signer = new TrustListSigner();
   private final ArtifactWriter writer = new ArtifactWriter();
 
@@ -38,25 +40,28 @@ public final class RegistrationDocuments {
         """, Map.of("issuer", config.issuer(), "subject", config.subject()));
     String token = signer.signJws(payload, identity.keyPair().getPrivate(),
         identity.certificate(), "rc-wrp+jwt");
-    writer.text(outputDirectory.resolve(config.jwtFile()), token);
-    try {
-      var header = JWSObject.parse(token).getHeader().toJSONObject();
-      String document = JsonTemplate.render(json, """
-          {
-            "headers": ${headers},
-            "payload": ${payload}
-          }
-          """, Map.of("headers", header, "payload", json.readTree(payload)));
-      writer.text(outputDirectory.resolve(config.jsonFile()), document);
-    } catch (java.text.ParseException e) {
-      throw new PkiCryptoException("Cannot serialize PID registration header", e);
+    if (config.jwtFile() != null) {
+      writer.text(outputDirectory.resolve(config.jwtFile()), token);
+    }
+    if (config.jsonFile() != null) {
+      try {
+        var header = JWSObject.parse(token).getHeader().toJSONObject();
+        String document = JsonTemplate.render(json, """
+            {
+              "headers": ${headers},
+              "payload": ${payload}
+            }
+            """, Map.of("headers", header, "payload", json.readTree(payload)));
+        writer.text(outputDirectory.resolve(config.jsonFile()), document);
+      } catch (java.text.ParseException e) {
+        throw new PkiCryptoException("Cannot serialize PID registration header", e);
+      }
     }
   }
 
   public void writeVerifier(VerifierRegistrationConfig config, Organization organization,
       SigningIdentity identity, CertificateAuthority authority, Path outputDirectory) {
     long issuedAt = Instant.now().getEpochSecond();
-    String base = config.publicBaseUrl().replaceAll("/+$", "");
     var claims = config.requestedPidClaims().stream()
         .map(path -> Map.of("path", Arrays.asList(path.split("\\.")))).toList();
     var values = new LinkedHashMap<String, Object>();
@@ -65,18 +70,18 @@ public final class RegistrationDocuments {
     values.put("country", organization.country());
     values.put("issuedAt", issuedAt);
     values.put("expiresAt", issuedAt + Duration.ofDays(config.validityDays()).toSeconds());
-    values.put("registryUri", base + "/registry");
+    values.put("registryUri", config.registryUri());
     values.put("description", config.description());
     values.put("purpose", config.purpose());
     values.put("claims", claims);
     values.put("serviceIdentifier", config.serviceIdentifier());
     values.put("intendedUseId", config.intendedUseId());
-    values.put("privacyPolicy", base + "/privacy");
-    values.put("infoUri", base + "/info");
-    values.put("supportUri", base + "/support");
+    values.put("privacyPolicy", config.privacyPolicyUri());
+    values.put("infoUri", config.infoUri());
+    values.put("supportUri", config.supportUri());
     values.put("supervisoryAuthority", config.supervisoryAuthority());
-    values.put("certificatePolicy", base + "/certificate-policy");
-    values.put("statusUri", base + "/registration-certificate-status");
+    values.put("certificatePolicy", config.certificatePolicyUri());
+    values.put("statusUri", config.statusListUri());
 
     String payload = JsonTemplate.render(json, """
         {
@@ -112,8 +117,6 @@ public final class RegistrationDocuments {
     String token = signer.signJws(payload, identity.keyPair().getPrivate(),
         List.of(identity.certificate(), authority.certificate()), "rc-wrp+jwt");
     writer.text(outputDirectory.resolve(config.jwtFile()), token);
-    writer.text(outputDirectory.resolve(config.environmentFile()),
-        "VERIFIER_INTENDEDUSES_0_REGISTRATIONCERTIFICATE=" + token + "\n");
   }
 
 }

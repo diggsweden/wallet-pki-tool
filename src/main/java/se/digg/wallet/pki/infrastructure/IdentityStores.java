@@ -25,16 +25,17 @@ public final class IdentityStores {
     keystores.saveKeyStore(store, file, password);
   }
 
-  public SigningIdentity loadTrustSigner(Path file, char[] password, X509Certificate authority) {
+  public SigningIdentity loadTrustSigner(Path file, String alias, char[] password,
+      X509Certificate authority) {
     var store = keystores.loadKeyStore(file, password);
     try {
-      var certificate = (X509Certificate) store.getCertificate("trust_source");
-      var key = (PrivateKey) store.getKey("trust_source", password);
-      var chain = store.getCertificateChain("trust_source");
+      var certificate = (X509Certificate) store.getCertificate(alias);
+      var key = (PrivateKey) store.getKey(alias, password);
+      var chain = store.getCertificateChain(alias);
       if (certificate == null || key == null || chain == null || chain.length != 2
           || !chain[1].equals(authority)) {
         throw new PkiCryptoException(
-            "Expected trust_source leaf and configured authority in " + file);
+            "Expected " + alias + " leaf and configured authority in " + file);
       }
       certificate.checkValidity();
       certificate.verify(authority.getPublicKey());

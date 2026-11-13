@@ -24,11 +24,11 @@ Use `--help` at any level to see the available operations and their prerequisite
 | Command | Creates or replaces | Required inputs |
 | :--- | :--- | :--- |
 | `authorities init [ROLE...]` | Missing CAs; selected public CA certificates and CRLs | Shared settings and selected `authorities` common names; no participant configuration or passwords. Defaults to all five authorities. |
-| `pid-issuer generate` | Three new keys in one keystore; issuer registration JWT/JSON | `pidIssuer`, its authority and password |
+| `pid-issuer generate` | Three new keys in one keystore; issuer registration JWT and/or JSON | `pidIssuer`, its authority and password |
 | `wallet-attestation-issuer generate` | New wallet attestation key and keystore | `walletAttestationIssuer`, its authority and password |
 | `verifier access generate` | New relying-party access key and keystore | `verifier.access`, its authority and password |
-| `verifier registration generate` | New registration key, keystore, JWT and environment file | `verifier.registration`, its authority and password |
-| `trust-source generate` | New signer key, keystore and public certificate; LoTE and development status-list fixture | `trustSource.signer` and `lote`; trust-source authority/password and configured public LoTE CAs |
+| `verifier registration generate` | New registration key, keystore and JWT | `verifier.registration`, its authority and password |
+| `trust-source generate` | New signer key and keystore; LoTE and development status-list fixture | `trustSource.signer` and `lote`; trust-source authority/password and configured public LoTE CAs |
 | `trust-source lote generate` | Only the LoTE, retaining the signer | `trustSource.signer` and `lote`; existing signer keystore/password, public trust-source CA and configured public LoTE CAs |
 | `ecosystem generate` | All five participant artifact sets and their documents | Complete role configuration, all five authorities and passwords |
 
@@ -49,7 +49,7 @@ java -jar target/wallet-pki-tool.jar authorities init wallet-attestation-issuer 
 java -jar target/wallet-pki-tool.jar wallet-attestation-issuer generate -c examples/wallet-attestation-issuer.yaml
 ```
 
-Other roles can be configured independently in the same way. A verifier can have only `access` or only `registration`. LoTE-only generation requires LoTE settings and the signer keystore/password reference; `signer.commonName` and `certificateFile` are needed only when generating a new signer. Supplied sections are validated even if a command does not use them.
+Other roles can be configured independently in the same way. A verifier can have only `access` or only `registration`. LoTE-only generation requires LoTE settings and the signer keystore/password reference; `signer.commonName` is needed only when generating a new signer. Supplied sections are validated even if a command does not use them.
 
 To rebuild the LoTE without replacing the signer:
 
@@ -57,11 +57,11 @@ To rebuild the LoTE without replacing the signer:
 java -jar target/wallet-pki-tool.jar trust-source lote generate -c examples/ecosystem.yaml
 ```
 
-The LoTE sequence number remains configurable; increment it in YAML when publishing an updated list.
+The LoTE sequence number is incremented automatically from the existing `lote.jwtFile` (starting at `1` when the file does not exist), unless `lote.sequenceNumber` is explicitly set in YAML.
 
 ### Configure LoTE authorities
 
-Each type under `trustSource.lote.trustedAuthorities` is a list. An entry uses that type's current local CA unless `certificateFile` overrides it with a public PEM CA certificate:
+Each type under `trustSource.lote.trustedAuthorities` is a list. An entry uses that type's current local CA unless `caCertificateFile` overrides it with a public PEM CA certificate:
 
 ```yaml
 trustedAuthorities:
@@ -74,10 +74,10 @@ trustedAuthorities:
       serviceName: Previous PID Issuance
       informationUrl: http://localhost
       streetAddress: Local
-      certificateFile: ./trust-anchors/previous-pid-ca.pem
+      caCertificateFile: ./trust-anchors/previous-pid-ca.pem
 ```
 
-Use multiple entries for CA rotation overlap or external CAs. `certificateFile` is an input path relative to the working directory, or an absolute path; it is independent of `outputDirectory`. File overrides need no corresponding local CA or private key and are read without copying or changing the input file.
+Use multiple entries for CA rotation overlap or external CAs. `caCertificateFile` is an input path relative to the working directory, or an absolute path; it is independent of `outputDirectory`. File overrides need no corresponding local CA or private key and are read without copying or changing the input file.
 
 The supported types are `pidIssuer`, `walletAttestationIssuer`, `verifierAccess`, and `verifierRegistration`. Omitted types and empty lists contribute no entries and require no local CA. The containing type determines the service type, regardless of the certificate's subject. This also allows intentionally incomplete trust lists or CAs assigned to another type for negative testing. Missing files, malformed certificates and certificates without CA basic constraints are rejected before generation writes outputs.
 
@@ -85,10 +85,11 @@ When migrating a single-entry configuration, turn each type's metadata object in
 
 ## Configuration
 
-Schema version `1` keeps CA common names and role output filenames in YAML. Shared `organization`, `authorities`, `stateDirectory`, `outputDirectory`, and `caDistribution` settings are required:
+Schema version `2` keeps CA common names and role output filenames in YAML. Shared `organization`, `authorities` (including `authorities.directory`), and `caDistribution` settings are required (`outputDirectory` is optional and defaults to `.`):
 
 ```yaml
 authorities:
+  directory: ./.wallet-pki
   pidIssuer:
     commonName: DIGG Wallet PID Issuer CA
   walletAttestationIssuer:
@@ -102,6 +103,12 @@ authorities:
 ```
 
 Authority common names have no built-in defaults. The CA organization and country come from `organization`. Existing CA certificates must match these configured subjects: changing a common name or organization requires an explicit CA migration, and the tool refuses to replace existing material automatically. Keep the names above when migrating a configuration that uses the previous hardcoded subjects. Role identifiers and storage directories remain fixed.
+
+PKCS#12 key aliases are optional and default to `pid_issuer`, `nonce-encryption` and `request-encryption` (`pidIssuer.signing.keyAlias`, `pidIssuer.encryption.nonceKeyAlias`, `pidIssuer.encryption.requestKeyAlias`), `wallet_attestation_issuer` (`walletAttestationIssuer.signing.keyAlias`), `verifier_access_certificate` (`verifier.access.keyAlias`), `registration` (`verifier.registration.keyAlias`), and `trust_source` (`trustSource.signer.keyAlias`).
+
+`subjectAlternativeNames` (`dns`, `ip`, `uri`) is optional for every leaf certificate (`pidIssuer.signing`, `pidIssuer.encryption`, `walletAttestationIssuer.signing`, `verifier.access`, `verifier.registration`, and `trustSource.signer`). `pidIssuer.encryption` can also be omitted completely when default aliases and no SANs are used.
+
+In `pidIssuer.registration`, at least one of `jwtFile` or `jsonFile` is required. In `verifier.registration.registration`, individual registration URIs (`registryUri`, `privacyPolicyUri`, `infoUri`, `supportUri`, `certificatePolicyUri`, `statusListUri`) can be configured explicitly or default to `defaultUri`.
 
 ```yaml
 caDistribution:
