@@ -9,10 +9,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import se.digg.wallet.pki.config.VerifierRegistrationConfig.RequestedCredential;
 import se.digg.wallet.pki.support.EcosystemFixture;
 import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.dataformat.yaml.YAMLMapper;
@@ -30,7 +32,8 @@ class ConfigurationLoaderTest {
     assertThat(config.pidIssuer().signing().commonName()).isEqualTo("PID Issuer (Ecosystem)");
     assertThat(config.walletAttestationIssuer().signing().subjectAlternativeNames().dns())
         .contains("wallet-attestation-issuer");
-    assertThat(config.verifier().registration().registration().requestedPidClaims())
+    assertThat(config.verifier().registration().registration().requestedCredentials().getFirst()
+        .claims())
         .contains("address.street_address");
     assertThat(config.trustSource().signer().keystorePassword().env())
         .isEqualTo("TRUST_SOURCE_KEYSTORE_PASSWORD");
@@ -79,6 +82,34 @@ class ConfigurationLoaderTest {
     document.put("schemaVersion", supportedVersion + offset);
 
     assertInvalid(yaml.writeValueAsString(document), "schemaVersion must be " + supportedVersion);
+  }
+
+  @Test
+  void pid_and_other_credential_requests_keep_their_own_claims() throws Exception {
+    var config = loadWithCredentialRequests("""
+        - vct: urn:eudi:pid:1
+          claims: [family_name, address.street_address]
+        - vct: urn:example:credential:1
+          claims: [reference, details.category]
+        """);
+
+    assertThat(config.verifier().registration().registration().requestedCredentials())
+        .containsExactly(
+            new RequestedCredential("urn:eudi:pid:1",
+                List.of("family_name", "address.street_address")),
+            new RequestedCredential("urn:example:credential:1",
+                List.of("reference", "details.category")));
+  }
+
+  @Test
+  void a_non_pid_credential_can_be_requested_on_its_own() throws Exception {
+    var config = loadWithCredentialRequests("""
+        - vct: urn:example:credential:1
+          claims: [reference]
+        """);
+
+    assertThat(config.verifier().registration().registration().requestedCredentials())
+        .containsExactly(new RequestedCredential("urn:example:credential:1", List.of("reference")));
   }
 
   @Test
@@ -287,6 +318,16 @@ class ConfigurationLoaderTest {
         .containsExactly("verifier-registration");
     assertThat(config.trustSource().signer().subjectAlternativeNames().dns())
         .containsExactly("trust-source-signer");
+  }
+
+  private PkiConfiguration loadWithCredentialRequests(String requests) throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = yaml.readTree(EcosystemFixture.yaml(directory));
+    ((ObjectNode) document.path("verifier").path("registration").path("registration"))
+        .set("requestedCredentials", yaml.readTree(requests));
+    Path file = directory.resolve("credentials.yaml");
+    Files.writeString(file, yaml.writeValueAsString(document));
+    return loader.load(file);
   }
 
   private void assertInvalid(String yaml, String message) throws Exception {

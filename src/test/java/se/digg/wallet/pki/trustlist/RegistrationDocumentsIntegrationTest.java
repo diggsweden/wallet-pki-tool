@@ -16,6 +16,7 @@ import org.junit.jupiter.api.io.TempDir;
 import se.digg.wallet.pki.config.PidIssuerConfig;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.LocalizedText;
+import se.digg.wallet.pki.config.VerifierRegistrationConfig.RequestedCredential;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.SupervisoryAuthority;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
@@ -83,6 +84,72 @@ class RegistrationDocumentsIntegrationTest {
   }
 
   @Test
+  void a_signed_registration_keeps_claims_scoped_to_each_vct() throws Exception {
+    var credentials = List.of(
+        new RequestedCredential("urn:eudi:pid:1",
+            List.of("family_name", "address.street_address")),
+        new RequestedCredential("urn:example:credential:1",
+            List.of("family_name", "reference", "details.category")));
+
+    var payload = writeVerifier("Service", credentials);
+
+    assertThat(payload.get("credentials")).isEqualTo(prettyMapper.readTree("""
+        [
+          {
+            "format": "dc+sd-jwt",
+            "meta": { "vct_values": ["urn:eudi:pid:1"] },
+            "claim": [
+              { "path": ["family_name"] },
+              { "path": ["address", "street_address"] }
+            ]
+          },
+          {
+            "format": "dc+sd-jwt",
+            "meta": { "vct_values": ["urn:example:credential:1"] },
+            "claim": [
+              { "path": ["family_name"] },
+              { "path": ["reference"] },
+              { "path": ["details", "category"] }
+            ]
+          }
+        ]
+        """));
+  }
+
+  @Test
+  void a_non_pid_registration_contains_no_pid_entry() throws Exception {
+    var credentials = List.of(new RequestedCredential("urn:example:credential:1",
+        List.of("reference", "details.category")));
+
+    var payload = writeVerifier("Service", credentials);
+
+    assertThat(payload.get("credentials")).isEqualTo(prettyMapper.readTree("""
+        [
+          {
+            "format": "dc+sd-jwt",
+            "meta": { "vct_values": ["urn:example:credential:1"] },
+            "claim": [
+              { "path": ["reference"] },
+              { "path": ["details", "category"] }
+            ]
+          }
+        ]
+        """));
+  }
+
+  @Test
+  void credential_claim_names_survive_json_escaping() throws Exception {
+    var credentials = List.of(new RequestedCredential("urn:example:credential:1",
+        List.of("custom_\"title", "custom\\title")));
+
+    var payload = writeVerifier("Service", credentials);
+
+    assertThat(payload.at("/credentials/0/claim/0/path/0").asString())
+        .isEqualTo("custom_\"title");
+    assertThat(payload.at("/credentials/0/claim/1/path/0").asString()).isEqualTo("custom\\title");
+  }
+
+  @Test
   void configured_text_survives_json_escaping_in_the_signed_document() throws Exception {
     String text = "A \"quoted\" name\nC:\\wallet";
 
@@ -105,7 +172,7 @@ class RegistrationDocumentsIntegrationTest {
         "https://status.example.test/sl",
         List.of(new LocalizedText("en", "Service")),
         List.of(new LocalizedText("en", "Identification")),
-        List.of("family_name"),
+        List.of(new RequestedCredential("urn:eudi:pid:1", List.of("family_name"))),
         new SupervisoryAuthority("IMY", "SE", "help@example.test"), 30);
     var organization = new Organization("DIGG", "SE", "VATSE-12345678");
     var authority = new CertificateAuthorityManager().createAuthority("registration", "Test CA");
@@ -154,11 +221,17 @@ class RegistrationDocumentsIntegrationTest {
   }
 
   private ObjectNode writeVerifier(String name) throws Exception {
+    return writeVerifier(name, List.of(new RequestedCredential("urn:eudi:pid:1",
+        List.of("family_name", "address.street_address"))));
+  }
+
+  private ObjectNode writeVerifier(String name, List<RequestedCredential> credentials)
+      throws Exception {
     var config = new VerifierRegistrationConfig("registration.jwt", name,
         "wallet-ecosystem", "1", "https://example.test",
         List.of(new LocalizedText("en", name)),
         List.of(new LocalizedText("en", "Identification")),
-        List.of("family_name", "address.street_address"),
+        credentials,
         new SupervisoryAuthority(name, "SE", "help@example.test"), 30);
     var organization = new Organization("DIGG", "SE", "VATSE-12345678");
     var authority = new CertificateAuthorityManager().createAuthority("registration", "Test CA");

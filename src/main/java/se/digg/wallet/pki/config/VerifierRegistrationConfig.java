@@ -4,24 +4,27 @@
 
 package se.digg.wallet.pki.config;
 
+import java.net.URI;
+import java.util.HashSet;
 import java.util.List;
 import se.digg.wallet.pki.domain.Checks;
 
-/** Business metadata for the verifier's PID registration JWT. */
+/** Business metadata and credential requests for the verifier's registration JWT. */
 public record VerifierRegistrationConfig(String jwtFile,
     String name, String serviceIdentifier,
     String intendedUseId,
     String defaultUri, String registryUri, String privacyPolicyUri, String infoUri,
     String supportUri, String certificatePolicyUri, String statusListUri,
     List<LocalizedText> description, List<LocalizedText> purpose,
-    List<String> requestedPidClaims, SupervisoryAuthority supervisoryAuthority, int validityDays) {
+    List<RequestedCredential> requestedCredentials,
+    SupervisoryAuthority supervisoryAuthority, int validityDays) {
   public VerifierRegistrationConfig(String jwtFile,
       String name, String serviceIdentifier, String intendedUseId,
       String defaultUri, List<LocalizedText> description, List<LocalizedText> purpose,
-      List<String> requestedPidClaims, SupervisoryAuthority supervisoryAuthority,
+      List<RequestedCredential> requestedCredentials, SupervisoryAuthority supervisoryAuthority,
       int validityDays) {
     this(jwtFile, name, serviceIdentifier, intendedUseId, defaultUri,
-        null, null, null, null, null, null, description, purpose, requestedPidClaims,
+        null, null, null, null, null, null, description, purpose, requestedCredentials,
         supervisoryAuthority, validityDays);
   }
 
@@ -45,11 +48,16 @@ public record VerifierRegistrationConfig(String jwtFile,
     if (description.isEmpty() || purpose.isEmpty()) {
       throw new IllegalArgumentException("Registration description and purpose must not be empty");
     }
-    requestedPidClaims =
-        List.copyOf(Checks.texts(requestedPidClaims, "registration.requestedPidClaims"));
-    for (String claim : requestedPidClaims) {
-      if (!claim.matches("[a-z_]+(\\.[a-z_]+)*")) {
-        throw new IllegalArgumentException("Invalid PID claim path: " + claim);
+    requestedCredentials = List.copyOf(
+        Checks.required(requestedCredentials, "registration.requestedCredentials"));
+    if (requestedCredentials.isEmpty()) {
+      throw new IllegalArgumentException("registration.requestedCredentials must not be empty");
+    }
+    var vcts = new HashSet<String>();
+    for (var credential : requestedCredentials) {
+      if (!vcts.add(credential.vct())) {
+        throw new IllegalArgumentException(
+            "Duplicate requested credential VCT: " + credential.vct());
       }
     }
     Checks.required(supervisoryAuthority, "registration.supervisoryAuthority");
@@ -65,6 +73,21 @@ public record VerifierRegistrationConfig(String jwtFile,
           field + " is required when registration.defaultUri is not set");
     }
     return defaultUri;
+  }
+
+  public record RequestedCredential(String vct, List<String> claims) {
+    public RequestedCredential {
+      if (!URI.create(Checks.text(vct, "registration.requestedCredentials.vct")).isAbsolute()) {
+        throw new IllegalArgumentException(
+            "registration.requestedCredentials.vct must be an absolute URI");
+      }
+      claims = List.copyOf(Checks.texts(claims, "registration.requestedCredentials.claims"));
+      for (String claim : claims) {
+        if (!claim.matches("[^.\\s]+(\\.[^.\\s]+)*")) {
+          throw new IllegalArgumentException("Invalid credential claim path: " + claim);
+        }
+      }
+    }
   }
 
   public record LocalizedText(String lang, String value) {

@@ -62,8 +62,17 @@ public final class RegistrationDocuments {
   public void writeVerifier(VerifierRegistrationConfig config, Organization organization,
       SigningIdentity identity, CertificateAuthority authority, Path outputDirectory) {
     long issuedAt = Instant.now().getEpochSecond();
-    var claims = config.requestedPidClaims().stream()
-        .map(path -> Map.of("path", Arrays.asList(path.split("\\.")))).toList();
+    var credentials = config.requestedCredentials().stream().map(credential -> {
+      var claims = credential.claims().stream()
+          .map(path -> Map.of("path", Arrays.asList(path.split("\\.")))).toList();
+      return json.readTree(JsonTemplate.render(json, """
+          {
+            "format": "dc+sd-jwt",
+            "meta": { "vct_values": [${vct}] },
+            "claim": ${claims}
+          }
+          """, Map.of("vct", credential.vct(), "claims", claims)));
+    }).toList();
     var values = new LinkedHashMap<String, Object>();
     values.put("name", config.name());
     values.put("subject", organization.identifier());
@@ -73,7 +82,7 @@ public final class RegistrationDocuments {
     values.put("registryUri", config.registryUri());
     values.put("description", config.description());
     values.put("purpose", config.purpose());
-    values.put("claims", claims);
+    values.put("credentials", credentials);
     values.put("serviceIdentifier", config.serviceIdentifier());
     values.put("intendedUseId", config.intendedUseId());
     values.put("privacyPolicy", config.privacyPolicyUri());
@@ -94,13 +103,7 @@ public final class RegistrationDocuments {
           "srv_description": ${description},
           "entitlements": ["https://uri.etsi.org/19475/Entitlement/Service_Provider"],
           "purpose": ${purpose},
-          "credentials": [
-            {
-              "format": "dc+sd-jwt",
-              "meta": { "vct_values": ["urn:eudi:pid:1"] },
-              "claim": ${claims}
-            }
-          ],
+          "credentials": ${credentials},
           "service_identifier": ${serviceIdentifier},
           "intended_use_id": ${intendedUseId},
           "privacy_policy": ${privacyPolicy},

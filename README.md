@@ -112,6 +112,8 @@ PKCS#12 key aliases are optional and default to `pid_issuer`, `nonce-encryption`
 
 In `pidIssuer.registration`, at least one of `jwtFile` or `jsonFile` is required. In `verifier.registration.registration`, individual registration URIs (`registryUri`, `privacyPolicyUri`, `infoUri`, `supportUri`, `certificatePolicyUri`, `statusListUri`) can be configured explicitly or default to `defaultUri`.
 
+Each verifier registration requires a nonempty `requestedCredentials` list with `vct` and `claims` per entry. VCTs must be absolute URIs and unique within the registration; claims use dotted paths.
+
 ```yaml
 caDistribution:
   baseUrl: http://trust-source

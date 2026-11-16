@@ -40,6 +40,7 @@ import se.digg.wallet.pki.support.EcosystemFixture;
 import se.digg.wallet.pki.trustlist.LoteGenerator;
 import se.digg.wallet.pki.trustlist.TrustListSigner;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
@@ -269,6 +270,49 @@ class WalletPkiCliComponentTest {
     }
     assertThat(after).isEqualTo(before);
     assertThat(snapshot(directory.resolve("state"))).isEqualTo(roots);
+  }
+
+  @Test
+  void adding_a_credential_type_replaces_only_the_verifier_registration() throws Exception {
+    Path file = initializedEcosystem();
+    var config = yaml.readTree(Files.readString(file));
+    var requests = (ArrayNode) config.path("verifier").path("registration").path("registration")
+        .path("requestedCredentials");
+    requests.add(yaml.readTree("""
+        vct: urn:example:credential:1
+        claims: [reference, details.category]
+        """));
+    Files.writeString(file, yaml.writeValueAsString(config));
+    var before = snapshot(directory.resolve("config"));
+    var roots = snapshot(directory.resolve("state"));
+    var cli = cli(name -> name.equals("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD")
+        ? "test-password" : null);
+
+    assertThat(run(cli, file, "verifier registration generate")).isZero();
+
+    final String jwt = "certificates/verifier-registration-certificate/registration_certificate.jwt";
+    final String keystore =
+        "certificates/verifier-registration-certificate/verifier-registration-certificate.p12";
+    var token = JWSObject.parse(Files.readString(directory.resolve("config").resolve(jwt)));
+    assertThat(new TrustListSigner().verifyJws(token.serialize(),
+        keystore(keystore).getCertificate("registration").getPublicKey())).isTrue();
+    var payload = yaml.readTree(token.getPayload().toString());
+    assertThat(payload.path("credentials").size()).isEqualTo(2);
+    assertThat(payload.at("/credentials/0/meta/vct_values/0").asString()).isEqualTo("urn:eudi:pid:1");
+    assertThat(payload.at("/credentials/1/meta/vct_values/0").asString())
+        .isEqualTo("urn:example:credential:1");
+    assertThat(payload.at("/credentials/1/claim/0/path/0").asString())
+        .isEqualTo("reference");
+    var after = snapshot(directory.resolve("config"));
+    assertThat(after.get(jwt)).isNotEqualTo(before.get(jwt));
+    assertThat(after.get(keystore)).isNotEqualTo(before.get(keystore));
+    for (String path : List.of(jwt, keystore)) {
+      before.remove(path);
+      after.remove(path);
+    }
+    assertThat(after).isEqualTo(before);
+    assertThat(snapshot(directory.resolve("state"))).isEqualTo(roots);
+    assertThat(err.toString()).isEmpty();
   }
 
   @Test

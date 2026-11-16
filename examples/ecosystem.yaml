@@ -80,15 +80,17 @@ verifier:
           value: Identification with credentials
         - lang: sv
           value: Identifiering med intyg
-      requestedPidClaims:
-        - personal_administrative_number
-        - family_name
-        - given_name
-        - birthdate
-        - address.street_address
-        - address.postal_code
-        - address.locality
-        - address.country
+      requestedCredentials:
+        - vct: urn:eudi:pid:1
+          claims:
+            - personal_administrative_number
+            - family_name
+            - given_name
+            - birthdate
+            - address.street_address
+            - address.postal_code
+            - address.locality
+            - address.country
       supervisoryAuthority:
         name: Local Wallet Ecosystem
         country: SE
