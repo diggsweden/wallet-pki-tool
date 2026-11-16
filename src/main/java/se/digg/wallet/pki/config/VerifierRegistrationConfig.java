@@ -16,20 +16,18 @@ public record VerifierRegistrationConfig(String jwtFile,
     String defaultUri, String registryUri, String privacyPolicyUri, String infoUri,
     String supportUri, String certificatePolicyUri, String statusListUri,
     List<LocalizedText> description, List<LocalizedText> purpose,
-    List<RequestedCredential> requestedCredentials,
-    SupervisoryAuthority supervisoryAuthority, int validityDays) {
+    List<RequestedCredential> requestedCredentials, int validityDays) {
   public VerifierRegistrationConfig(String jwtFile,
       String name, String serviceIdentifier, String intendedUseId,
       String defaultUri, List<LocalizedText> description, List<LocalizedText> purpose,
-      List<RequestedCredential> requestedCredentials, SupervisoryAuthority supervisoryAuthority,
-      int validityDays) {
+      List<RequestedCredential> requestedCredentials, int validityDays) {
     this(jwtFile, name, serviceIdentifier, intendedUseId, defaultUri,
         null, null, null, null, null, null, description, purpose, requestedCredentials,
-        supervisoryAuthority, validityDays);
+        validityDays);
   }
 
   public VerifierRegistrationConfig {
-    Checks.relativePath(jwtFile, "verifier.registration.registration.jwtFile");
+    Checks.relativePath(jwtFile, "verifier.registrations.jwtFile");
     Checks.text(name, "registration.name");
     Checks.text(serviceIdentifier, "registration.serviceIdentifier");
     Checks.text(intendedUseId, "registration.intendedUseId");
@@ -60,7 +58,6 @@ public record VerifierRegistrationConfig(String jwtFile,
             "Duplicate requested credential VCT: " + credential.vct());
       }
     }
-    Checks.required(supervisoryAuthority, "registration.supervisoryAuthority");
     Checks.positive(validityDays, "registration.validityDays");
   }
 
@@ -94,14 +91,6 @@ public record VerifierRegistrationConfig(String jwtFile,
     public LocalizedText {
       Checks.text(lang, "localized text.lang");
       Checks.text(value, "localized text.value");
-    }
-  }
-
-  public record SupervisoryAuthority(String name, String country, String email) {
-    public SupervisoryAuthority {
-      Checks.text(name, "supervisoryAuthority.name");
-      Checks.text(country, "supervisoryAuthority.country");
-      Checks.text(email, "supervisoryAuthority.email");
     }
   }
 }

@@ -14,10 +14,10 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import se.digg.wallet.pki.config.PidIssuerConfig;
+import se.digg.wallet.pki.config.VerifierConfig.SupervisoryAuthority;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.LocalizedText;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.RequestedCredential;
-import se.digg.wallet.pki.config.VerifierRegistrationConfig.SupervisoryAuthority;
 import se.digg.wallet.pki.crypto.CertificateAuthorityManager;
 import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
@@ -172,8 +172,7 @@ class RegistrationDocumentsIntegrationTest {
         "https://status.example.test/sl",
         List.of(new LocalizedText("en", "Service")),
         List.of(new LocalizedText("en", "Identification")),
-        List.of(new RequestedCredential("urn:eudi:pid:1", List.of("family_name"))),
-        new SupervisoryAuthority("IMY", "SE", "help@example.test"), 30);
+        List.of(new RequestedCredential("urn:eudi:pid:1", List.of("family_name"))), 30);
     var organization = new Organization("DIGG", "SE", "VATSE-12345678");
     var authority = new CertificateAuthorityManager().createAuthority("registration", "Test CA");
     var key = new EcKeyGenerator().generateKeyPair();
@@ -182,6 +181,7 @@ class RegistrationDocumentsIntegrationTest {
         key.getPublic(), authority);
 
     new RegistrationDocuments().writeVerifier(config, organization,
+        new SupervisoryAuthority("IMY", "SE", "help@example.test"),
         new SigningIdentity(key, certificate), authority, directory);
 
     assertThat(directory.resolve("registration.jwt")).isRegularFile();
@@ -231,8 +231,7 @@ class RegistrationDocumentsIntegrationTest {
         "wallet-ecosystem", "1", "https://example.test",
         List.of(new LocalizedText("en", name)),
         List.of(new LocalizedText("en", "Identification")),
-        credentials,
-        new SupervisoryAuthority(name, "SE", "help@example.test"), 30);
+        credentials, 30);
     var organization = new Organization("DIGG", "SE", "VATSE-12345678");
     var authority = new CertificateAuthorityManager().createAuthority("registration", "Test CA");
     var key = new EcKeyGenerator().generateKeyPair();
@@ -241,7 +240,8 @@ class RegistrationDocumentsIntegrationTest {
         key.getPublic(), authority);
     var identity = new SigningIdentity(key, certificate);
 
-    new RegistrationDocuments().writeVerifier(config, organization, identity, authority, directory);
+    new RegistrationDocuments().writeVerifier(config, organization,
+        new SupervisoryAuthority(name, "SE", "help@example.test"), identity, authority, directory);
 
     String token = Files.readString(directory.resolve(config.jwtFile()));
     assertThat(new TrustListSigner().verifyJws(token, certificate.getPublicKey())).isTrue();

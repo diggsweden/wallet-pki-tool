@@ -45,6 +45,10 @@ import tools.jackson.databind.node.ObjectNode;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
 class WalletPkiCliComponentTest {
+  private static final String REGISTRATION_KEYSTORE =
+      "certificates/verifier-registration-certificate/verifier-registration-certificate.p12";
+  private static final String SECOND_REGISTRATION_JWT =
+      "certificates/verifier-registration-certificate/second-registration.jwt";
   @TempDir
   Path directory;
   private final StringWriter out = new StringWriter();
@@ -206,13 +210,15 @@ class WalletPkiCliComponentTest {
           + "VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD, certificates/"
           + "verifier-access-certificate/verifier-access-certificate.p12, "
           + "verifier_access_certificate",
-      "verifier.registration, verifier registration, "
+      "verifier.registrations, verifier registration, "
           + "VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD, "
           + "certificates/verifier-registration-certificate/"
           + "verifier-registration-certificate.p12, registration"})
   void participant_generation_requires_only_its_own_role_and_password(String section,
       String command, String passwordName, String keystore, String alias) throws Exception {
-    Path file = configuration(section);
+    Path file = section.equals("verifier.registrations")
+        ? configuration("verifier.registrationSigner", "verifier.supervisoryAuthority", section)
+        : configuration(section);
     var lookups = new ArrayList<String>();
     var cli = cli(name -> {
       lookups.add(name);
@@ -276,7 +282,7 @@ class WalletPkiCliComponentTest {
   void adding_a_credential_type_replaces_only_the_verifier_registration() throws Exception {
     Path file = initializedEcosystem();
     var config = yaml.readTree(Files.readString(file));
-    var requests = (ArrayNode) config.path("verifier").path("registration").path("registration")
+    var requests = (ArrayNode) config.path("verifier").path("registrations").get(0)
         .path("requestedCredentials");
     requests.add(yaml.readTree("""
         vct: urn:example:credential:1
@@ -286,11 +292,13 @@ class WalletPkiCliComponentTest {
     var before = snapshot(directory.resolve("config"));
     var roots = snapshot(directory.resolve("state"));
     var cli = cli(name -> name.equals("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD")
-        ? "test-password" : null);
+        ? "test-password"
+        : null);
 
     assertThat(run(cli, file, "verifier registration generate")).isZero();
 
-    final String jwt = "certificates/verifier-registration-certificate/registration_certificate.jwt";
+    final String jwt =
+        "certificates/verifier-registration-certificate/registration_certificate.jwt";
     final String keystore =
         "certificates/verifier-registration-certificate/verifier-registration-certificate.p12";
     var token = JWSObject.parse(Files.readString(directory.resolve("config").resolve(jwt)));
@@ -298,7 +306,8 @@ class WalletPkiCliComponentTest {
         keystore(keystore).getCertificate("registration").getPublicKey())).isTrue();
     var payload = yaml.readTree(token.getPayload().toString());
     assertThat(payload.path("credentials").size()).isEqualTo(2);
-    assertThat(payload.at("/credentials/0/meta/vct_values/0").asString()).isEqualTo("urn:eudi:pid:1");
+    assertThat(payload.at("/credentials/0/meta/vct_values/0").asString())
+        .isEqualTo("urn:eudi:pid:1");
     assertThat(payload.at("/credentials/1/meta/vct_values/0").asString())
         .isEqualTo("urn:example:credential:1");
     assertThat(payload.at("/credentials/1/claim/0/path/0").asString())
@@ -313,6 +322,103 @@ class WalletPkiCliComponentTest {
     assertThat(after).isEqualTo(before);
     assertThat(snapshot(directory.resolve("state"))).isEqualTo(roots);
     assertThat(err.toString()).isEmpty();
+  }
+
+  @Test
+  void multiple_registrations_preserve_unrelated_artifacts_and_authorities() throws Exception {
+    Path file = initializedEcosystem();
+    addVerifierRegistration(file);
+    var before = snapshot(directory.resolve("config"));
+    var roots = snapshot(directory.resolve("state"));
+    var cli = cli(name -> name.equals("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD")
+        ? "test-password"
+        : null);
+
+    assertThat(run(cli, file, "verifier registration generate")).isZero();
+
+    assertGeneratedRegistrations();
+    var after = snapshot(directory.resolve("config"));
+    for (String path : List.of(
+        REGISTRATION_KEYSTORE,
+        "certificates/verifier-registration-certificate/registration_certificate.jwt",
+        SECOND_REGISTRATION_JWT)) {
+      before.remove(path);
+      after.remove(path);
+    }
+    assertThat(after).isEqualTo(before);
+    assertThat(snapshot(directory.resolve("state"))).isEqualTo(roots);
+    assertThat(err.toString()).isEmpty();
+  }
+
+  @Test
+  void ecosystem_generation_includes_every_verifier_registration() throws Exception {
+    Path file = initializedEcosystem();
+    addVerifierRegistration(file);
+
+    assertThat(run(cli(name -> "test-password"), file, "ecosystem generate")).isZero();
+
+    assertGeneratedRegistrations();
+    assertThat(err.toString()).isEmpty();
+  }
+
+  @Test
+  void the_shared_signer_password_is_resolved_once_for_all_registrations() throws Exception {
+    Path file = initializedEcosystem();
+    addVerifierRegistration(file);
+    var lookups = new ArrayList<String>();
+    var cli = cli(name -> {
+      lookups.add(name);
+      return name.equals("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD")
+          ? "test-password"
+          : null;
+    });
+
+    assertThat(run(cli, file, "verifier registration generate")).isZero();
+
+    assertThat(lookups).containsExactly("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD");
+    assertGeneratedRegistrations();
+    assertThat(err.toString()).isEmpty();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"verifier registration generate", "ecosystem generate"})
+  void a_missing_registration_password_preserves_all_existing_outputs(String command)
+      throws Exception {
+    Path file = initializedEcosystem();
+    addVerifierRegistration(file);
+    var before = snapshot(directory.resolve("config"));
+    var roots = snapshot(directory.resolve("state"));
+    var cli = cli(name -> name.equals("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD")
+        ? null
+        : "test-password");
+
+    assertThat(run(cli, file, command)).isEqualTo(1);
+
+    assertThat(snapshot(directory.resolve("config"))).isEqualTo(before);
+    assertThat(snapshot(directory.resolve("state"))).isEqualTo(roots);
+    assertThat(err.toString()).contains("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD");
+  }
+
+  @Test
+  void registration_generation_requires_at_least_one_entry_before_reading_passwords()
+      throws Exception {
+    Path file = configuration("verifier.registrationSigner", "verifier.supervisoryAuthority",
+        "verifier.registrations");
+    var config = yaml.readTree(Files.readString(file));
+    ((ArrayNode) config.path("verifier").path("registrations")).removeAll();
+    Files.writeString(file, yaml.writeValueAsString(config));
+    var lookups = new ArrayList<String>();
+    var cli = cli(name -> {
+      lookups.add(name);
+      return "test-password";
+    });
+
+    assertThat(run(cli, file, "verifier registration generate")).isEqualTo(1);
+
+    assertThat(lookups).isEmpty();
+    assertThat(err.toString()).contains("verifier.registrations must not be empty");
+    assertThat(directory.resolve("state")).doesNotExist();
+    assertThat(directory.resolve("config")).doesNotExist();
   }
 
   @Test
@@ -563,7 +669,7 @@ class WalletPkiCliComponentTest {
     ((ObjectNode) config.path("walletAttestationIssuer").path("signing"))
         .put("keyAlias", "custom-wallet");
     ((ObjectNode) config.path("verifier").path("access")).put("keyAlias", "custom-access");
-    ((ObjectNode) config.path("verifier").path("registration"))
+    ((ObjectNode) config.path("verifier").path("registrationSigner"))
         .put("keyAlias", "custom-registration");
     ((ObjectNode) config.path("trustSource").path("signer")).put("keyAlias", "custom-trust-signer");
     Files.writeString(file, yaml.writeValueAsString(config));
@@ -706,6 +812,49 @@ class WalletPkiCliComponentTest {
         .isEqualTo(1);
 
     assertThat(err.toString()).contains("Configuration file not found");
+  }
+
+  private void addVerifierRegistration(Path file) throws Exception {
+    var config = yaml.readTree(Files.readString(file));
+    var registrations = (ArrayNode) config.path("verifier").path("registrations");
+    var second = ((ObjectNode) registrations.get(0)).deepCopy();
+    second.put("jwtFile", SECOND_REGISTRATION_JWT);
+    second.put("intendedUseId", "2");
+    second.set("requestedCredentials", yaml.readTree("""
+        - vct: urn:example:credential:1
+          claims: [reference]
+        """));
+    registrations.add(second);
+    Files.writeString(file, yaml.writeValueAsString(config));
+  }
+
+  private void assertGeneratedRegistrations() throws Exception {
+    var jwtFiles = List.of(
+        "certificates/verifier-registration-certificate/registration_certificate.jwt",
+        SECOND_REGISTRATION_JWT);
+    var signerChain = keystore(REGISTRATION_KEYSTORE).getCertificateChain("registration");
+    var supervisoryAuthority = yaml.readTree("""
+        name: Local Wallet Ecosystem
+        country: SE
+        email: walletecosystem@example.com
+        """);
+    var vcts = List.of("urn:eudi:pid:1", "urn:example:credential:1");
+    for (int i = 0; i < jwtFiles.size(); i++) {
+      var token = JWSObject.parse(
+          Files.readString(directory.resolve("config").resolve(jwtFiles.get(i))));
+      assertThat(new TrustListSigner().verifyJws(token.serialize(), signerChain[0].getPublicKey()))
+          .isTrue();
+      assertThat(token.getHeader().getX509CertChain()).hasSize(2);
+      assertThat(token.getHeader().getX509CertChain().getFirst().decode())
+          .isEqualTo(signerChain[0].getEncoded());
+      assertThat(token.getHeader().getX509CertChain().getLast().decode())
+          .isEqualTo(signerChain[1].getEncoded());
+      var payload = yaml.readTree(token.getPayload().toString());
+      assertThat(payload.path("supervisory_authority")).isEqualTo(supervisoryAuthority);
+      assertThat(payload.path("intended_use_id").asString()).isEqualTo(Integer.toString(i + 1));
+      assertThat(payload.path("credentials").size()).isEqualTo(1);
+      assertThat(payload.at("/credentials/0/meta/vct_values/0").asString()).isEqualTo(vcts.get(i));
+    }
   }
 
   private WalletPkiCli cli(java.util.function.Function<String, String> passwords) {

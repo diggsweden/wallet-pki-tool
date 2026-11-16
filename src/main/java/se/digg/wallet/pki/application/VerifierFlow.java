@@ -7,9 +7,11 @@ package se.digg.wallet.pki.application;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.util.List;
 import se.digg.wallet.pki.config.PkiConfiguration;
 import se.digg.wallet.pki.config.SecretResolver;
 import se.digg.wallet.pki.config.VerifierConfig;
+import se.digg.wallet.pki.config.VerifierRegistrationConfig;
 import se.digg.wallet.pki.crypto.CertificateProfileIssuer;
 import se.digg.wallet.pki.crypto.EcKeyGenerator;
 import se.digg.wallet.pki.domain.AuthorityRole;
@@ -34,9 +36,13 @@ public final class VerifierFlow {
     return Checks.required(verifier.access(), "verifier.access");
   }
 
-  static VerifierConfig.Registration requireRegistrationConfiguration(PkiConfiguration config) {
+  static List<VerifierRegistrationConfig> requireRegistrationConfigurations(
+      PkiConfiguration config) {
     var verifier = Checks.required(config.verifier(), "verifier");
-    return Checks.required(verifier.registration(), "verifier.registration");
+    if (verifier.registrations().isEmpty()) {
+      throw new IllegalArgumentException("verifier.registrations must not be empty");
+    }
+    return verifier.registrations();
   }
 
   ServicePkiInputs loadAccessInputs(PkiConfiguration config) {
@@ -46,9 +52,11 @@ public final class VerifierFlow {
   }
 
   ServicePkiInputs loadRegistrationInputs(PkiConfiguration config) {
-    var registration = requireRegistrationConfiguration(config);
+    requireRegistrationConfigurations(config);
+    var signer = Checks.required(config.verifier().registrationSigner(),
+        "verifier.registrationSigner");
     return ServicePkiInputs.load(config, AuthorityRole.VERIFIER_REGISTRATION,
-        registration.keystorePassword(), secrets);
+        signer.keystorePassword(), secrets);
   }
 
   public void generateAccess(PkiConfiguration config, PrintWriter out) {
@@ -81,22 +89,27 @@ public final class VerifierFlow {
   }
 
   void generateRegistration(PkiConfiguration config, ServicePkiInputs inputs, PrintWriter out) {
-    var registration = config.verifier().registration();
+    var signer = config.verifier().registrationSigner();
     var authority = inputs.authority();
     var outputDirectory = Path.of(config.outputDirectory());
     var certificates =
         new CertificateProfileIssuer(new SecureRandom(), config.caDistribution().baseUrl());
     var key = keys.generateKeyPair();
-    var subject = new CertificateSubject(registration.commonName(), config.organization(),
-        registration.subjectAlternativeNames());
+    var subject = new CertificateSubject(signer.commonName(), config.organization(),
+        signer.subjectAlternativeNames());
     var certificate =
         certificates.issueRelyingPartyRegistrationCertificate(subject, key.getPublic(), authority);
     var identity = new SigningIdentity(key, certificate);
-    stores.write(outputDirectory.resolve(registration.keystoreFile()), registration.keyAlias(),
+    stores.write(outputDirectory.resolve(signer.keystoreFile()), signer.keyAlias(),
         identity, authority, inputs.keystorePassword());
-    new RegistrationDocuments().writeVerifier(registration.registration(), config.organization(),
-        identity, authority, outputDirectory);
+    out.println("Generated: verifier-registration-signer (new keys; selected files replaced)");
+    var documents = new RegistrationDocuments();
+    for (var registration : config.verifier().registrations()) {
+      documents.writeVerifier(registration, config.organization(),
+          config.verifier().supervisoryAuthority(), identity, authority, outputDirectory);
+      out.println("Generated: verifier-registration " + registration.intendedUseId()
+          + " (selected files replaced)");
+    }
     inputs.publishAuthority();
-    out.println("Generated: verifier-registration (new keys; selected files replaced)");
   }
 }

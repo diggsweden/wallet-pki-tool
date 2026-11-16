@@ -15,7 +15,6 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.LocalizedText;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig.RequestedCredential;
-import se.digg.wallet.pki.config.VerifierRegistrationConfig.SupervisoryAuthority;
 
 class VerifierRegistrationConfigTest {
   @ParameterizedTest
@@ -102,7 +101,6 @@ class VerifierRegistrationConfigTest {
   private VerifierRegistrationConfig registration(List<RequestedCredential> credentials) {
     return new VerifierRegistrationConfig("registration.jwt", "Service", "wallet-ecosystem", "1",
         "https://example.test", List.of(new LocalizedText("en", "Service")),
-        List.of(new LocalizedText("en", "Identification")), credentials,
-        new SupervisoryAuthority("Service", "SE", "help@example.test"), 30);
+        List.of(new LocalizedText("en", "Identification")), credentials, 30);
   }
 }

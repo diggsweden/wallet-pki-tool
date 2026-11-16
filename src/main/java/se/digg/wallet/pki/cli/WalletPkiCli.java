@@ -70,8 +70,8 @@ public final class WalletPkiCli {
                 + "Requires the access authority and password.",
             verifier::generateAccess))
         .addSubcommand("registration", participant("registration", loader,
-            "Create a new registration key and replace the keystore and registration JWT. "
-                + "Requires the registration authority and password.",
+            "Create one registration signer and a JWT for every configured verifier registration. "
+                + "Requires the registration authority and signer password.",
             verifier::generateRegistration)));
     var trust = participant("trust-source", loader,
         "Create a new trust signer, replace its keystore and rebuild LoTE "

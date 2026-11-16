@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import se.digg.wallet.pki.config.PidIssuerConfig;
+import se.digg.wallet.pki.config.VerifierConfig.SupervisoryAuthority;
 import se.digg.wallet.pki.config.VerifierRegistrationConfig;
 import se.digg.wallet.pki.crypto.CertificateAuthority;
 import se.digg.wallet.pki.crypto.PkiCryptoException;
@@ -60,7 +61,8 @@ public final class RegistrationDocuments {
   }
 
   public void writeVerifier(VerifierRegistrationConfig config, Organization organization,
-      SigningIdentity identity, CertificateAuthority authority, Path outputDirectory) {
+      SupervisoryAuthority supervisoryAuthority, SigningIdentity identity,
+      CertificateAuthority authority, Path outputDirectory) {
     long issuedAt = Instant.now().getEpochSecond();
     var credentials = config.requestedCredentials().stream().map(credential -> {
       var claims = credential.claims().stream()
@@ -88,7 +90,7 @@ public final class RegistrationDocuments {
     values.put("privacyPolicy", config.privacyPolicyUri());
     values.put("infoUri", config.infoUri());
     values.put("supportUri", config.supportUri());
-    values.put("supervisoryAuthority", config.supervisoryAuthority());
+    values.put("supervisoryAuthority", supervisoryAuthority);
     values.put("certificatePolicy", config.certificatePolicyUri());
     values.put("statusUri", config.statusListUri());
 

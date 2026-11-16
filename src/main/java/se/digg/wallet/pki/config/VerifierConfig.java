@@ -4,11 +4,53 @@
 
 package se.digg.wallet.pki.config;
 
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import se.digg.wallet.pki.domain.Checks;
 import se.digg.wallet.pki.domain.SubjectAlternativeNames;
 
 /** Separate access and registration hierarchies for the verifier. */
-public record VerifierConfig(Access access, Registration registration) {
+public record VerifierConfig(Access access, RegistrationSigner registrationSigner,
+    SupervisoryAuthority supervisoryAuthority, List<VerifierRegistrationConfig> registrations) {
+  public VerifierConfig {
+    registrations = registrations == null ? List.of() : List.copyOf(registrations);
+    var intendedUseIds = new HashSet<String>();
+    var outputPaths = new HashSet<Path>();
+    if (access != null) {
+      outputPaths.add(Path.of(access.keystoreFile()).normalize());
+    }
+    if (registrationSigner != null) {
+      addOutputPath(outputPaths, registrationSigner.keystoreFile());
+    }
+    if (!registrations.isEmpty()) {
+      Checks.required(registrationSigner, "verifier.registrationSigner");
+      Checks.required(supervisoryAuthority, "verifier.supervisoryAuthority");
+    }
+    for (var registration : registrations) {
+      if (!intendedUseIds.add(registration.intendedUseId())) {
+        throw new IllegalArgumentException("Duplicate verifier intendedUseId: "
+            + registration.intendedUseId());
+      }
+      addOutputPath(outputPaths, registration.jwtFile());
+    }
+  }
+
+  private static void addOutputPath(Set<Path> paths, String value) {
+    if (!paths.add(Path.of(value).normalize())) {
+      throw new IllegalArgumentException("Verifier output paths must be distinct: " + value);
+    }
+  }
+
+  public record SupervisoryAuthority(String name, String country, String email) {
+    public SupervisoryAuthority {
+      Checks.text(name, "verifier.supervisoryAuthority.name");
+      Checks.text(country, "verifier.supervisoryAuthority.country");
+      Checks.text(email, "verifier.supervisoryAuthority.email");
+    }
+  }
+
   public record Access(String keystoreFile, String keyAlias, String commonName,
       SubjectAlternativeNames subjectAlternativeNames, PasswordSource keystorePassword) {
     public Access {
@@ -22,18 +64,16 @@ public record VerifierConfig(Access access, Registration registration) {
     }
   }
 
-  public record Registration(String keystoreFile, String keyAlias, String commonName,
-      SubjectAlternativeNames subjectAlternativeNames,
-      PasswordSource keystorePassword, VerifierRegistrationConfig registration) {
-    public Registration {
-      Checks.relativePath(keystoreFile, "verifier.registration.keystoreFile");
+  public record RegistrationSigner(String keystoreFile, String keyAlias, String commonName,
+      SubjectAlternativeNames subjectAlternativeNames, PasswordSource keystorePassword) {
+    public RegistrationSigner {
+      Checks.relativePath(keystoreFile, "verifier.registrationSigner.keystoreFile");
       keyAlias = keyAlias == null ? "registration"
-          : Checks.text(keyAlias, "verifier.registration.keyAlias");
-      Checks.text(commonName, "verifier.registration.commonName");
+          : Checks.text(keyAlias, "verifier.registrationSigner.keyAlias");
+      Checks.text(commonName, "verifier.registrationSigner.commonName");
       subjectAlternativeNames = subjectAlternativeNames == null ? SubjectAlternativeNames.empty()
           : subjectAlternativeNames;
-      Checks.required(keystorePassword, "verifier.registration.keystorePassword");
-      Checks.required(registration, "verifier.registration.registration");
+      Checks.required(keystorePassword, "verifier.registrationSigner.keystorePassword");
     }
   }
 }

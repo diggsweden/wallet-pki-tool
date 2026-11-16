@@ -32,8 +32,8 @@ class ConfigurationLoaderTest {
     assertThat(config.pidIssuer().signing().commonName()).isEqualTo("PID Issuer (Ecosystem)");
     assertThat(config.walletAttestationIssuer().signing().subjectAlternativeNames().dns())
         .contains("wallet-attestation-issuer");
-    assertThat(config.verifier().registration().registration().requestedCredentials().getFirst()
-        .claims())
+    assertThat(config.verifier().registrations().getFirst()
+        .requestedCredentials().getFirst().claims())
         .contains("address.street_address");
     assertThat(config.trustSource().signer().keystorePassword().env())
         .isEqualTo("TRUST_SOURCE_KEYSTORE_PASSWORD");
@@ -93,7 +93,7 @@ class ConfigurationLoaderTest {
           claims: [reference, details.category]
         """);
 
-    assertThat(config.verifier().registration().registration().requestedCredentials())
+    assertThat(config.verifier().registrations().getFirst().requestedCredentials())
         .containsExactly(
             new RequestedCredential("urn:eudi:pid:1",
                 List.of("family_name", "address.street_address")),
@@ -108,7 +108,7 @@ class ConfigurationLoaderTest {
           claims: [reference]
         """);
 
-    assertThat(config.verifier().registration().registration().requestedCredentials())
+    assertThat(config.verifier().registrations().getFirst().requestedCredentials())
         .containsExactly(new RequestedCredential("urn:example:credential:1", List.of("reference")));
   }
 
@@ -146,8 +146,8 @@ class ConfigurationLoaderTest {
 
   @ParameterizedTest
   @ValueSource(
-      strings = {"pidIssuer", "walletAttestationIssuer", "verifier.access", "verifier.registration",
-          "trustSource"})
+      strings = {"pidIssuer", "walletAttestationIssuer", "verifier.access",
+          "verifier.registrationSigner", "trustSource"})
   void authority_settings_are_rejected_for_every_role(String section) throws Exception {
     var yaml = YAMLMapper.builder().build();
     var document = yaml.readTree(EcosystemFixture.yaml(directory));
@@ -260,10 +260,10 @@ class ConfigurationLoaderTest {
     assertInvalid(yaml.writeValueAsString(pidDoc), "At least one of pidIssuer.registration");
 
     var verifierDoc = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
-    ((ObjectNode) verifierDoc.path("verifier").path("registration").path("registration"))
+    ((ObjectNode) verifierDoc.path("verifier").path("registrations").get(0))
         .remove("jwtFile");
     assertInvalid(yaml.writeValueAsString(verifierDoc),
-        "verifier.registration.registration.jwtFile is required");
+        "verifier.registrations.jwtFile is required");
   }
 
   @Test
@@ -271,7 +271,7 @@ class ConfigurationLoaderTest {
       throws Exception {
     var yaml = YAMLMapper.builder().build();
     var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
-    ((ObjectNode) document.path("verifier").path("registration").path("registration"))
+    ((ObjectNode) document.path("verifier").path("registrations").get(0))
         .remove("defaultUri");
 
     assertInvalid(yaml.writeValueAsString(document),
@@ -298,7 +298,7 @@ class ConfigurationLoaderTest {
     ((ObjectNode) document.path("walletAttestationIssuer").path("signing"))
         .remove("subjectAlternativeNames");
     ((ObjectNode) document.path("verifier").path("access")).remove("subjectAlternativeNames");
-    ((ObjectNode) document.path("verifier").path("registration"))
+    ((ObjectNode) document.path("verifier").path("registrationSigner"))
         .putObject("subjectAlternativeNames").putArray("dns").add("verifier-registration");
     ((ObjectNode) document.path("trustSource").path("signer"))
         .putObject("subjectAlternativeNames").putArray("dns").add("trust-source-signer");
@@ -314,7 +314,7 @@ class ConfigurationLoaderTest {
     assertThat(config.walletAttestationIssuer().signing().subjectAlternativeNames().dns())
         .isEmpty();
     assertThat(config.verifier().access().subjectAlternativeNames().dns()).isEmpty();
-    assertThat(config.verifier().registration().subjectAlternativeNames().dns())
+    assertThat(config.verifier().registrationSigner().subjectAlternativeNames().dns())
         .containsExactly("verifier-registration");
     assertThat(config.trustSource().signer().subjectAlternativeNames().dns())
         .containsExactly("trust-source-signer");
@@ -323,7 +323,7 @@ class ConfigurationLoaderTest {
   private PkiConfiguration loadWithCredentialRequests(String requests) throws Exception {
     var yaml = YAMLMapper.builder().build();
     var document = yaml.readTree(EcosystemFixture.yaml(directory));
-    ((ObjectNode) document.path("verifier").path("registration").path("registration"))
+    ((ObjectNode) document.path("verifier").path("registrations").get(0))
         .set("requestedCredentials", yaml.readTree(requests));
     Path file = directory.resolve("credentials.yaml");
     Files.writeString(file, yaml.writeValueAsString(document));

@@ -28,7 +28,7 @@ public final class WalletServicesPkiGenerator {
     PidIssuerFlow.requireConfiguration(config);
     WalletAttestationIssuerFlow.requireConfiguration(config);
     VerifierFlow.requireAccessConfiguration(config);
-    VerifierFlow.requireRegistrationConfiguration(config);
+    VerifierFlow.requireRegistrationConfigurations(config);
     TrustSourceFlow.requireConfiguration(config);
 
     try (var pidIssuerInputs = pidIssuer.loadInputs(config);
