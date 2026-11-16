@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-schemaVersion: 2
+schemaVersion: 3
 # Artifact paths below are relative to outputDirectory (defaults to ".").
 outputDirectory: ./config
 

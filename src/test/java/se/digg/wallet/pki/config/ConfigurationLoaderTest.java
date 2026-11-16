@@ -70,10 +70,15 @@ class ConfigurationLoaderTest {
     assertInvalid(yaml.writeValueAsString(document), "pidIssur");
   }
 
-  @Test
-  void unsupported_schema_versions_are_rejected() throws Exception {
-    assertInvalid(EcosystemFixture.yaml(directory).replace("schemaVersion: 2", "schemaVersion: 1"),
-        "schemaVersion must be 2");
+  @ParameterizedTest
+  @ValueSource(ints = {-1, 1})
+  void unsupported_schema_versions_are_rejected(int offset) throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    int supportedVersion = document.path("schemaVersion").asInt();
+    document.put("schemaVersion", supportedVersion + offset);
+
+    assertInvalid(yaml.writeValueAsString(document), "schemaVersion must be " + supportedVersion);
   }
 
   @Test
@@ -89,9 +94,12 @@ class ConfigurationLoaderTest {
   }
 
   @Test
-  void missing_required_role_sections_are_rejected() throws Exception {
-    assertInvalid("schemaVersion: 2\noutputDirectory: config\n",
-        "organization is required");
+  void organization_is_required() throws Exception {
+    var yaml = YAMLMapper.builder().build();
+    var document = (ObjectNode) yaml.readTree(EcosystemFixture.yaml(directory));
+    document.remove("organization");
+
+    assertInvalid(yaml.writeValueAsString(document), "organization is required");
   }
 
   @Test
@@ -131,11 +139,10 @@ class ConfigurationLoaderTest {
   @Test
   void duplicate_yaml_fields_are_rejected() throws Exception {
     Path file = directory.resolve("duplicate.yaml");
-    Files.writeString(file, EcosystemFixture.yaml(directory)
-        .replace("schemaVersion: 2", "schemaVersion: 2\nschemaVersion: 2"));
+    Files.writeString(file, EcosystemFixture.yaml(directory) + "\noutputDirectory: duplicate\n");
     assertThatThrownBy(() -> loader.load(file)).isInstanceOf(PkiConfigurationException.class)
         .hasMessageContaining("Duplicate")
-        .hasMessageContaining("schemaVersion");
+        .hasMessageContaining("outputDirectory");
   }
 
   @Test

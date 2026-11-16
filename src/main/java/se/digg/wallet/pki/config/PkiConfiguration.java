@@ -14,8 +14,8 @@ public record PkiConfiguration(int schemaVersion, String outputDirectory,
     PidIssuerConfig pidIssuer, WalletAttestationIssuerConfig walletAttestationIssuer,
     VerifierConfig verifier, TrustSourceConfig trustSource) {
   public PkiConfiguration {
-    if (schemaVersion != 2) {
-      throw new IllegalArgumentException("schemaVersion must be 2");
+    if (schemaVersion != 3) {
+      throw new IllegalArgumentException("schemaVersion must be 3");
     }
     outputDirectory =
         outputDirectory == null ? "." : Checks.text(outputDirectory, "outputDirectory");

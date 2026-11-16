@@ -85,7 +85,9 @@ When migrating a single-entry configuration, turn each type's metadata object in
 
 ## Configuration
 
-Schema version `2` keeps CA common names and role output filenames in YAML. Shared `organization`, `authorities` (including `authorities.directory`), and `caDistribution` settings are required (`outputDirectory` is optional and defaults to `.`):
+Set `schemaVersion: 3`.
+
+Shared settings `organization`, `authorities`, and `caDistribution` are required. `outputDirectory` defaults to `.`.
 
 ```yaml
 authorities:
