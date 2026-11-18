@@ -84,7 +84,7 @@ class RegistrationDocumentsIntegrationTest {
   }
 
   @Test
-  void a_signed_registration_keeps_claims_scoped_to_each_vct() throws Exception {
+  void signed_registration_keeps_claims_scoped_to_each_vct() throws Exception {
     var credentials = List.of(
         new RequestedCredential("urn:eudi:pid:1",
             List.of("family_name", "address.street_address")),
@@ -117,7 +117,7 @@ class RegistrationDocumentsIntegrationTest {
   }
 
   @Test
-  void a_non_pid_registration_contains_no_pid_entry() throws Exception {
+  void non_pid_registration_contains_no_pid_entry() throws Exception {
     var credentials = List.of(new RequestedCredential("urn:example:credential:1",
         List.of("reference", "details.category")));
 

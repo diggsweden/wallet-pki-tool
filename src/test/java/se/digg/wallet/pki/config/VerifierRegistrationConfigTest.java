@@ -27,7 +27,7 @@ class VerifierRegistrationConfigTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"urn:eudi:pid:1", "urn:example:credential:1"})
-  void a_vct_cannot_be_requested_twice_even_with_different_claims(String vct) {
+  void vct_cannot_be_requested_twice_even_with_different_claims(String vct) {
     var credentials = List.of(new RequestedCredential(vct, List.of("family_name")),
         new RequestedCredential(vct, List.of("given_name")));
 

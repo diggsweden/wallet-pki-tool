@@ -39,7 +39,7 @@ class VerifierConfigTest {
   }
 
   @Test
-  void a_registration_cannot_overwrite_the_shared_signer_keystore() {
+  void registration_cannot_overwrite_the_shared_signer_keystore() {
     var registrations = List.of(registration("1", "signer.p12"));
 
     assertThatThrownBy(() -> new VerifierConfig(null, signer("signer.p12"),
@@ -63,7 +63,7 @@ class VerifierConfigTest {
   }
 
   @Test
-  void registration_documents_require_a_signer() {
+  void registration_documents_require_signer() {
     var registrations = List.of(registration("1", "registration.jwt"));
 
     assertThatThrownBy(() -> new VerifierConfig(null, null, supervisoryAuthority(), registrations))
@@ -72,7 +72,7 @@ class VerifierConfigTest {
   }
 
   @Test
-  void registration_documents_require_a_common_supervisory_authority() {
+  void registration_documents_require_common_supervisory_authority() {
     var registrations = List.of(registration("1", "registration.jwt"));
 
     assertThatThrownBy(() -> new VerifierConfig(null, signer("signer.p12"), null, registrations))

@@ -16,7 +16,6 @@ public record VerifierConfig(Access access, RegistrationSigner registrationSigne
     SupervisoryAuthority supervisoryAuthority, List<VerifierRegistrationConfig> registrations) {
   public VerifierConfig {
     registrations = registrations == null ? List.of() : List.copyOf(registrations);
-    var intendedUseIds = new HashSet<String>();
     var outputPaths = new HashSet<Path>();
     if (access != null) {
       outputPaths.add(Path.of(access.keystoreFile()).normalize());
@@ -28,6 +27,7 @@ public record VerifierConfig(Access access, RegistrationSigner registrationSigne
       Checks.required(registrationSigner, "verifier.registrationSigner");
       Checks.required(supervisoryAuthority, "verifier.supervisoryAuthority");
     }
+    var intendedUseIds = new HashSet<String>();
     for (var registration : registrations) {
       if (!intendedUseIds.add(registration.intendedUseId())) {
         throw new IllegalArgumentException("Duplicate verifier intendedUseId: "

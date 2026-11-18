@@ -102,7 +102,7 @@ class ConfigurationLoaderTest {
   }
 
   @Test
-  void a_non_pid_credential_can_be_requested_on_its_own() throws Exception {
+  void non_pid_credential_can_be_requested_on_its_own() throws Exception {
     var config = loadWithCredentialRequests("""
         - vct: urn:example:credential:1
           claims: [reference]
