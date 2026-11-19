@@ -279,7 +279,7 @@ class WalletPkiCliComponentTest {
   }
 
   @Test
-  void adding_a_credential_type_replaces_only_the_verifier_registration() throws Exception {
+  void adding_credential_type_replaces_only_the_verifier_registration() throws Exception {
     Path file = initializedEcosystem();
     var config = yaml.readTree(Files.readString(file));
     var requests = (ArrayNode) config.path("verifier").path("registrations").get(0)
@@ -289,8 +289,8 @@ class WalletPkiCliComponentTest {
         claims: [reference, details.category]
         """));
     Files.writeString(file, yaml.writeValueAsString(config));
-    var before = snapshot(directory.resolve("config"));
-    var roots = snapshot(directory.resolve("state"));
+    final var before = snapshot(directory.resolve("config"));
+    final var roots = snapshot(directory.resolve("state"));
     var cli = cli(name -> name.equals("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD")
         ? "test-password"
         : null);
@@ -328,8 +328,8 @@ class WalletPkiCliComponentTest {
   void multiple_registrations_preserve_unrelated_artifacts_and_authorities() throws Exception {
     Path file = initializedEcosystem();
     addVerifierRegistration(file);
-    var before = snapshot(directory.resolve("config"));
-    var roots = snapshot(directory.resolve("state"));
+    final var before = snapshot(directory.resolve("config"));
+    final var roots = snapshot(directory.resolve("state"));
     var cli = cli(name -> name.equals("VERIFIER_REGISTRATION_CERTIFICATE_KEYSTORE_PASSWORD")
         ? "test-password"
         : null);
@@ -382,7 +382,7 @@ class WalletPkiCliComponentTest {
 
   @ParameterizedTest
   @ValueSource(strings = {"verifier registration generate", "ecosystem generate"})
-  void a_missing_registration_password_preserves_all_existing_outputs(String command)
+  void missing_registration_password_preserves_all_existing_outputs(String command)
       throws Exception {
     Path file = initializedEcosystem();
     addVerifierRegistration(file);
