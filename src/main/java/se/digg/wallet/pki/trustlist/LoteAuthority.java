@@ -16,8 +16,5 @@ public record LoteAuthority(AuthorityRole role, X509Certificate certificate,
     Checks.required(role, "LoTE authority role");
     Checks.required(certificate, "LoTE authority certificate");
     Checks.required(entity, "LoTE authority metadata");
-    if (certificate.getBasicConstraints() < 0) {
-      throw new IllegalArgumentException("LoTE requires a CA certificate for " + role.directory());
-    }
   }
 }
