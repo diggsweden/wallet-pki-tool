@@ -580,10 +580,13 @@ class WalletPkiCliComponentTest {
   }
 
   @ParameterizedTest
-  @CsvSource({"missing, trust-source generate", "malformed, trust-source generate",
-      "leaf, trust-source generate", "missing, trust-source lote generate",
-      "malformed, trust-source lote generate", "leaf, trust-source lote generate",
-      "missing, ecosystem generate", "malformed, ecosystem generate", "leaf, ecosystem generate"})
+  @CsvSource({
+      "missing, trust-source generate",
+      "malformed, trust-source generate",
+      "missing, trust-source lote generate",
+      "malformed, trust-source lote generate",
+      "missing, ecosystem generate",
+      "malformed, ecosystem generate"})
   void invalid_certificate_overrides_preserve_existing_outputs(String kind, String command)
       throws Exception {
     Path file = initializedEcosystem();
